@@ -1,0 +1,11 @@
+{
+  /* src/core/ is pure TypeScript: compiled with no DOM lib and no ambient types, so any
+     reference to document, window, fetch or localStorage is a type error, not a convention.
+     Run by `npm run check` alongside the main typecheck. */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/core"]
+}

@@ -1,0 +1,3 @@
+# The pre-commit hook is a shell script: CRLF on checkout breaks it under Git for Windows.
+# Normalise the whole repo to LF rather than special-casing one file.
+* text=auto eol=lf

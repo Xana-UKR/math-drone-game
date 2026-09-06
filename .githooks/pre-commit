@@ -1,0 +1,4 @@
+#!/bin/sh
+# Mechanical execution: a failing check cannot be committed by forgetting to run it.
+# Installed by `npm install` (package.json "prepare" sets core.hooksPath).
+exec npm run check
