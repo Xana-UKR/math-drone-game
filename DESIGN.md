@@ -1,6 +1,6 @@
 # Math Drone Defense — Design Specification
 
-**Status:** Design complete. Stack not yet chosen. No code written.
+**Status:** Design complete. Stack chosen (§17). No code written.
 
 **How to use this document:** Start a new session with this file. It contains every decision made
 so far, the reasoning behind the non-obvious ones, what was explicitly rejected (so it doesn't get
@@ -69,16 +69,19 @@ right = more dangerous.
 ---
 
 ## 4. Core loop
-
+ At start a user has definite number hearts and definite number of drones.
 1. A problem is displayed on the base console (e.g. `7 × 8 = ?`).
 2. Exactly one tank on screen carries the correct answer as its number. All other tanks carry
    distractors.
-3. The player taps that tank (or, in recall mode, types the number).
+3. The player taps that tank (or, in recall mode, types the number). Retargeting is forbidden.
 4. **Correct:** a drone launches from the wall *in that tank's lane*, flies straight down the lane,
-   and destroys the tank on impact. Score increases. A new problem is generated.
-5. **Wrong:** resolved immediately — buzz, one drone lost, brief input lockout. No flight animation.
+  and destroys the tank on impact. The drone is a kamikadze drone - it does not return back. 
+  Number of drones decreases by 1. Score increases. A new problem is generated.
+5. **Wrong:** a drone is launched from the top right corner and flies diagonally and dissapperas 
+  at the left bottom corner 
+  side of screen. One drone lost. Score remains the same. Problem stay the same.
 6. A tank reaching the wall costs one heart and is destroyed on impact.
-7. The run ends at zero hearts.
+7. The run ends at zero hearts (loss) or when the wave is exhausted with hearts remaining (win). See §7.
 
 ### Drone flight
 
@@ -89,17 +92,6 @@ right = more dangerous.
   absolute.
 - **One drone in flight at a time.** The next problem appears on impact.
 - Flight should be **short** — it is a reward animation, not a decision window.
-
-### Why wrong answers resolve immediately
-
-Since retargeting is forbidden, the outcome is already determined at the moment of the tap. Making
-the child watch a flight to learn they were wrong only delays feedback, and immediate feedback is
-one of the strongest levers in educational software.
-
-It also avoids a physics contradiction: a kamikaze drone that hit the wrong tank would logically
-destroy it, which would mean wrong answers usefully clear the board.
-
----
 
 ## 5. Target selection (the urgency rule)
 
@@ -185,13 +177,35 @@ testable without rendering anything.
 | Resource | Behaviour |
 |---|---|
 | **Hearts** | Start at 3. A tank reaching the wall costs one heart and is destroyed on impact. |
-| **Drones** | Finite pool. A wrong answer costs one. Regenerates slowly — one per N correct answers ("resupply"). |
+| **Drones** | Finite pool. Every answer costs one. Regenerates slowly — one per N correct answers ("resupply"). |
 
-**There is exactly one loss condition: zero hearts.**
+### Run structure: a finite, winnable wave
 
-Running out of drones is deliberately *not* a separate game-over rule. If you have no drones you
-can't shoot, tanks reach the wall, and you lose organically. This keeps the rule set minimal while
-the failure still reads to the player as "I ran out of drones."
+A run is a **finite wave of N tanks**. The drone pool starts at N, and every answer — right or
+wrong — costs one drone. Resupply grants +1 drone per M correct answers.
+
+This makes the error budget explicit and self-tuning: winning requires N correct answers, which
+earn `floor(N/M)` resupply drones, so a run tolerates exactly **`floor(N/M)` wrong answers**. At
+N = 12, M = 3 that is four mistakes. N and M are the difficulty dial for the resource economy.
+
+**Win:** the wave is exhausted — every tank resolved, whether destroyed by a drone or destroyed
+breaching the wall — **and hearts remain**.
+
+**Loss:** hearts reach zero.
+
+**Simultaneous resolution: the loss is checked first.** If the last tank's impact both empties the
+wave and takes the final heart, the run is a loss. Without this precedence the outcome is undefined,
+because a breaching tank is destroyed on impact and therefore also advances the win condition.
+
+A consequence, accepted deliberately: because breached tanks count as resolved, a player who runs
+dry of drones with a heart to spare can let the last tanks through and still win. That is a scrape,
+not a strategy — every breach costs a heart, and with three hearts it buys at most two tanks.
+
+Running out of drones is deliberately *not* a separate game-over rule. It costs hearts rather than
+ending the run, and the failure still reads to the player as "I ran out of drones." Note the
+justification is *not* that a dry player loses inevitably — in a finite wave the tanks run out
+before the hearts do. It is that a dedicated rule would add nothing the heart economy does not
+already express.
 
 **Why drones regenerate:** as a fixed pool, drones create a death spiral — wrong answers are most
 likely under pressure, which is exactly when losing one hurts most, which increases pressure. A
@@ -287,7 +301,7 @@ age**, with an "advanced" expander over the raw knobs.
 ### The complete difficulty toolkit
 
 Because tanks never shoot back (§11), every cost in the game is denominated in seconds — flight
-time, thinking time, the wrong-answer lockout, all measured against tanks advancing at `v_tank`.
+time, thinking time, the wrong-answer time lost, all measured against tanks advancing at `v_tank`.
 That makes difficulty tuning effectively one-dimensional, and this is the whole list of dials:
 
 | Dial | Effect |
@@ -304,13 +318,8 @@ That makes difficulty tuning effectively one-dimensional, and this is the whole 
 
 ## 11. Tanks never shoot back
 
-Deliberate, and worth protecting against later pressure to make the game "more fun."
-
 - The drone can only ever be lost by being **wrong**. Nothing random, nothing reflex-based. A parent
   watching can see that every loss was a math mistake.
-- The game never degrades into a dodging game. The educational purpose survives.
-- It produces the single-currency property that makes §10 tractable.
-
 ---
 
 ## 12. Practice mode
@@ -354,9 +363,6 @@ and re-tunable without touching art. This covers most of the motion in the game.
 never hardcodes the grid and a 24-frame explosion can be swapped in later without a code change.
 Export at 2× target size for high-DPI screens.
 
-Rejected: GIF (bad transparency, no control), SMIL-animated SVG (fine for a pulsing glow, miserable
-for an explosion), Lottie (good, but it's an After Effects pipeline that isn't available here).
-
 **Tooling note:** Photoshop is a raster tool. The drone, tanks, base and background want Illustrator,
 Figma, or Inkscape (free). Photoshop's role is effects sprite sheets only.
 
@@ -370,17 +376,11 @@ Figma, or Inkscape (free). Photoshop's role is effects sprite sheets only.
 - **Text safe zone on the tank.** The number is *game data drawn by the engine*, not part of the
   art. Every tank sprite needs a defined region — position, size, guaranteed contrast — where up to
   three digits render legibly. **This is the single most likely thing to break when swapping art.**
-  On a top-down tank this is the hull roof, which is a better surface than a side view offered.
+  On a top-down tank this is the hull roof.
 - **Animatable element IDs** for anything the engine transforms.
 
 Ship a **dev-only asset page** that renders every asset with its anchors and text zones drawn on
 top. Ten minutes of work; makes swapping art a non-event.
-
-### Camera lock
-
-Top-down is locked. Top-down tanks are a hull rectangle, a turret circle and a barrel — easier to
-draw than side views — but none of it is reusable if the camera later changes. **Do not start
-drawing until this is final.** (It is final.)
 
 ---
 
@@ -457,7 +457,7 @@ needed now.**
 | Retargeting mid-flight | Adds a velocity/turn-rate physics model, breaks the §6 guarantee, and weakens the wrong-answer penalty. |
 | Kamikaze drone destroying a wrongly-targeted tank | Would make wrong answers usefully clear the board. |
 | Wrong answers resolving on impact | Delays feedback for no gain, since the choice is already committed. |
-| "No drones left" as a separate game-over | Redundant — you lose organically via breaches. |
+| "No drones left" as a separate game-over | Adds nothing the heart economy does not already express (§7). |
 | Instant loss on first breach | Too harsh for the target age; kills replay. |
 | Fixed (non-regenerating) drone pool | Creates a death spiral under pressure. |
 | Generating tanks from the problem | Numbers would change under the player's finger. |
@@ -467,22 +467,64 @@ needed now.**
 | Central drone hangar with diagonal flight | Breaks per-lane symmetry; edge lanes get a worse deal, and drone speed re-enters the fairness equation. |
 | GIF / SMIL / Lottie for effects | See §13. |
 | Portrait orientation (v1) | Layout is a landscape composition. |
+| Phaser 3 / PixiJS | Rasterise SVG at load, so §13's named-group animation does not survive; Phaser additionally pulls game state toward Scenes, against §14. See §17. |
+| Canvas 2D rendering | Cannot reach inside an SVG, so §13's asset contract would become "parts plus an offsets manifest"; also hand-rolled text fitting and hit-testing. See §17. |
+| C++ / WebAssembly for the core | Still requires JS for DOM, input, audio and assets — you learn the web anyway, plus an Emscripten toolchain, and it forecloses nothing TypeScript doesn't. |
 
 ---
 
-## 17. Open questions
+## 17. Technology stack (decided)
+
+**TypeScript + Vite + Vitest. DOM with inline SVG for rendering. No game engine.**
+
+Rationale, tied to requirements already in this document:
+
+- **Inline SVG in the DOM implements §13 literally.** Each tank is a `<g>` node; the engine
+  transforms named groups (`rotor-fl`) inside a static SVG exactly as §13 specifies. Canvas- and
+  WebGL-based options (Pixi, Phaser) rasterise SVG at load, so named-group animation does not
+  survive and the asset contract would have to become "a folder of parts plus an offsets manifest".
+- **The tank number becomes a real `<text>` element.** §13 calls the text safe zone the single most
+  likely thing to break when swapping art; this is the option where it breaks least — legible at any
+  DPI, no font atlas, no manual `measureText` fitting.
+- **Tap targeting is a `click` listener on the tank node** — correct on touch and mouse with no
+  hit-testing code.
+- **An SVG `viewBox` gives responsive, aspect-preserving scaling natively**, which is most of what
+  an engine's scale manager exists to provide.
+- **TypeScript's `strict` mode is the closest available equivalent to warnings-as-errors**, and is
+  what keeps an AI agent's output mechanically checkable (§19).
+- The renderer sits behind a narrow interface and the logic core never imports it, so this is a
+  reversible decision — roughly a day to swap at this scene size.
+
+**What no-engine costs, and the mitigation.** The engine features this game would otherwise use are
+a preloader, a sprite-sheet flipbook, a tween helper, and audio — about 250–300 lines total, nearly
+all deferred to late milestones. Physics, particles, input abstraction, scaling and text rendering
+are all either unnecessary here or better in the DOM.
+
+**Audio is the one genuine loss** and should be bought, not built: browser autoplay unlock, decode,
+pooling and the mobile-Safari quirks are fiddly and platform-specific. Use **Howler.js** (~10KB,
+audio only, architecture-agnostic) rather than adopting a whole engine for its sound manager.
+
+**Risk to watch:** drift — quietly building a bad game engine one helper at a time. Rule: build the
+specific thing the game needs, never the general system. If a helper grows options nothing uses,
+stop.
+
+**Animation clock rule.** CSS transitions and the Web Animations API run on the browser's clock, not
+the game's — they do not pause when the game pauses and do not scale with the fixed timestep.
+Therefore: anything affecting gameplay (drone and tank positions) is moved by the game loop; only
+decorative effects (flashes, shake, score pops) may be CSS.
+
+---
+
+## 17a. Open questions
 
 1. **`t_answer` per age tier.** The entire fairness system depends on it. Measure from real play
    rather than guessing; the simulation harness (§14) is the tool.
-2. **Technology stack.** Deliberately not chosen yet. Now much easier to decide because the
-   requirements are pinned down. Note the author is an experienced C++ developer with no
-   JavaScript/TypeScript, game engine, or web experience, and is explicitly open to learning
-   whatever is actually best.
-3. **Concrete tuning values** — tank speeds per tier, spawn governor parameters, drone regeneration
-   rate, lockout duration, scoring formula.
-4. **Sound.** Not discussed. Note that browsers require a user gesture before audio can start.
-5. **How presets are surfaced in the UI** — parent-facing setup screen vs. in-game.
-6. **Background art** — static, or parallax scrolling ground to convey tank motion.
+2. **Concrete tuning values** — tank speeds per tier, spawn governor parameters, wave size N,
+   resupply rate M, scoring formula.
+3. **Sound design** — which cues exist and what they sound like. The *technical* question is
+   resolved (Howler.js, unlocked on the first tap); the content question is not.
+4. **How presets are surfaced in the UI** — parent-facing setup screen vs. in-game.
+5. **Background art** — static, or parallax scrolling ground to convey tank motion.
 
 ---
 
