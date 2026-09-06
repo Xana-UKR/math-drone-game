@@ -1,6 +1,17 @@
 # Build Plan
 
-**Status: increment 0 not started.** No code yet.
+**Status: increment 0 complete (`bed74b9`). Next: increment 1 — tanks move.**
+
+Carried into increment 1:
+
+- Delete `src/core/placeholder.ts` — it exists only so `tsconfig.core.json` has inputs, and
+  increment 1's spec must name it.
+- **`Date.now()` is reachable from core** and no config can exclude it (it is in the ES lib, not
+  the DOM lib). Time must be *injected* into `step()`, not read — same hazard class as
+  `Math.random`, but unenforceable mechanically, so it belongs in the spec.
+- The core-boundary guards ship with known holes (dynamic `import()`, inline `eslint-disable`,
+  tests co-located under `src/` being skipped). Details in `JOURNAL.md`; harden when one bites,
+  or as a standalone chore before increment 5.
 
 How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning lives in `WORKFLOW.md`.
 

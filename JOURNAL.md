@@ -16,4 +16,36 @@ corrections.
 
 ---
 
-*(no entries yet — first will be increment 0)*
+## Increment 0 — scaffold (2026-09-06)
+
+**The guards ship with known holes.** `/code-review` found, and verified by execution, that
+increment 0's core-boundary enforcement fails open in four ways. None was fixed — the scaffold was
+committed as reviewed — so they are live:
+
+| Hole | Effect |
+|---|---|
+| `no-restricted-imports` ignores dynamic `import()` | a DOM-free `render/` module can be pulled into core past all three layers |
+| no `noInlineConfig` | one `// eslint-disable-next-line` defeats the `Math.random` ban, which has no tsconfig layer behind it |
+| `test.include` is `test/**` only | a `.test.ts` co-located under `src/` is silently skipped; vitest exits 0 without naming it |
+| `eslint .` without `--max-warnings 0` | warnings never fail `npm run check` — including the unused-disable-directive warning that would reveal the hole above |
+
+Also: the globs are `**/*.ts`, so `.mts`/`.tsx` get no rules at all; `boundary.test.ts` probes only
+2 of the 20 banned globals; and `npm run check` never runs `vite build`, so `index.html` breakage
+passes the gate.
+
+**The pre-commit hook checks the working tree, not the index.** So `git add -p` plus an unstaged fix
+can land a red commit green. A real gap, not something the hook's own comment supports.
+
+**`npm run check` can fail with a message that names no cause.** During review it died four times in
+a row with `TypeError: Cannot read properties of undefined (reading 'config')` and "(0 test)",
+including on a file whose entire body was `expect(1 + 1).toBe(2)`. It self-healed once
+`node_modules/.vite` regenerated and never reproduced. **Recovery: delete `node_modules/.vite`.**
+
+**Two Windows-specific things bit during the scaffold.** `tsc` refuses a project with no input
+files, which is the only reason `src/core/placeholder.ts` exists; and Git for Windows would check
+the shell hook out as CRLF and break it, which is why `.gitattributes` pins LF.
+
+**Versions are all at a current major** — ESLint 10, TypeScript 6, Vite 8, Vitest 5. Most examples
+online target the previous majors, so suspect version skew before suspecting the code.
+
+---
