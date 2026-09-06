@@ -38,10 +38,16 @@ something is the way it is.
 
 One increment = one session = one commit = a diff scannable in a few minutes.
 
-1. **Spec** — ~15 lines in `specs/NN-name.md`, including an explicit **out-of-scope** block.
-   Committed with the code.
-2. **Tests** — for core increments, written from the spec before implementation. For visual
-   increments, instead state what the author will *look at* to judge it done.
+**The loop has two hard stops. At each one, present the work, stop, and wait for the author's
+reply. Do not continue past a stop, and do not create or modify any other file, until they answer.**
+
+1. **Spec** — write `specs/NN-name.md` (~15 lines, including an explicit **out-of-scope** block).
+   → **STOP. Present the spec and wait.** Expect to revise it — the discussion is the point of this
+   step, and a wrong spec is cheapest to fix here. Nothing else may be created until it is approved.
+2. **Tests** — from the *approved* spec, before implementation. For visual increments, instead state
+   what the author will *look at* to judge it done.
+   → **STOP. Present the test names and wait.** The author reviews the names, not the bodies; a
+   vague name means a vague test.
 3. **Implementation** — until `npm run check` passes. Delegate to the `implementer` subagent once
    the spec and tests exist.
 4. **Verification** — the author runs `npm run check`, checks `git diff --stat` against the files the
@@ -65,6 +71,10 @@ so.
 
 Do **not** ask permission to do work already specified, or confirm routine judgment calls (naming,
 file layout, obvious helper extraction). State safe assumptions inline and continue.
+
+**The two stops in the loop are not covered by that.** They are required halts, not requests for
+permission, and they apply even when the next step is obvious and the spec looks finished — work is
+"already specified" only *after* the author has approved the spec.
 
 ## Report at the end of every increment
 

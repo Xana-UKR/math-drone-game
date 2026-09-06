@@ -162,6 +162,12 @@ within a month.
 
 ## Failure modes to watch for
 
+- **Running straight past a review gate.** Found at increment 0: the loop in `CLAUDE.md` was written
+  as a list of artifacts to produce, so it read as a checklist rather than as a sequence with halts —
+  and the ask-section's "don't ask permission to do work already specified" made continuing look
+  correct once the spec existed. A step only stops if it *says* it stops. Both gates are now
+  explicit, and "already specified" is defined as *after the author approves*. Human-side backstop
+  that needs no cooperation: open the session asking for the spec alone, and send "go" separately.
 - **Quiet scope drift** — the increment that helpfully does three things. Guard: the out-of-scope
   block, and `git diff --stat` before accepting.
 - **A failing test made to pass by weakening the test.** Guard: `CLAUDE.md` and the `implementer`
