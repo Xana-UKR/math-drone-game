@@ -31,6 +31,9 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **9** | **Simulation harness.** Headless; player modelled as `(t_answer, accuracy)`; 1000 runs per preset; report run length, win rate, breach rate, "no safe answer available" count. **Then tune.** | core | Win rates per preset; DESIGN.md §17a.1 and §17a.2 closed |
 | **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI → audio (Howler) → recall mode → profiles/stats → PWA + offline | mixed | per DESIGN.md §18 priority |
 
+**Effort:** leave at the Claude Code default (`xhigh`) throughout, except increments **6** and **9** —
+set `max` when opening those sessions. Set it at session start, never mid-session (`WORKFLOW.md`).
+
 Increments 1, 3, 4a and 4b are **vertical** slices (core + render). 2 and 5–9 are pure core, added
 underneath a game that already runs — so nothing is ever un-playable, and the "all the logic first"
 trap is avoided.

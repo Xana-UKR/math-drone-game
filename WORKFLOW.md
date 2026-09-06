@@ -87,6 +87,29 @@ of 50K of conversation, runs on Sonnet, and never disturbs the Opus session's ca
 
 ---
 
+### Effort
+
+Same principle, same conclusion: **spend where verification is weak.** Leave effort at the Claude
+Code default (`xhigh`) and raise it to `max` only for increments **6** (the §6 invariant and the spawn
+governor — the subtlest reasoning in the design) and **9** (interpreting simulation output into
+tuning values). Never lower it to save tokens: the saving is modest and lands precisely on the
+low-verification work where errors survive.
+
+Effort is a **human-side session setting** — the agent cannot set its own — so it belongs in `PLAN.md`
+and here, never in `CLAUDE.md`, where it would be an instruction nothing can act on.
+
+### Set session parameters at the start, never mid-session
+
+The cache invalidation hierarchy has three tiers (tools → system → messages); a change invalidates
+its own tier and everything below. A **model switch rebuilds all three** — no escape hatch. `speed`
+invalidates the system tier down. `thinking` on/off is nearly free. **Effort is not documented in that
+table**, so its cost is unknown and could be either.
+
+That uncertainty is moot: every parameter we care about is a per-*increment* decision, and an
+increment is one session. Choose model and effort when opening the session, then leave them alone.
+(`/code-review`'s level is a different thing — it shapes how the review runs, not a mid-conversation
+API parameter, so it costs nothing to use at the end of an increment.)
+
 ## Why exactly one subagent
 
 > A subagent earns a definition file when the task **recurs**, is **self-contained enough to brief
