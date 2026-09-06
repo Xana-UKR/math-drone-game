@@ -37,7 +37,7 @@ export default tseslint.config(
   {
     // All randomness goes through the injected seeded RNG — the headless simulation
     // (DESIGN.md §14) depends on same-seed-same-output.
-    files: ['**/*.ts'],
+    files: ['**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
     rules: {
       'no-restricted-properties': [
         'error',
@@ -51,7 +51,10 @@ export default tseslint.config(
   },
 
   {
-    files: ['src/core/**/*.ts'],
+    files: ['src/core/**/*.{ts,tsx,mts,cts,js,mjs,cjs}'],
+    // Inline `eslint-disable` is ignored inside core. The boundary is not negotiable per call
+    // site, and the Math.random ban in particular has no typecheck layer standing behind it.
+    linterOptions: { noInlineConfig: true },
     rules: {
       'no-restricted-globals': [
         'error',
@@ -68,11 +71,21 @@ export default tseslint.config(
           ],
         },
       ],
+      // no-restricted-imports only inspects static import/export declarations, so a dynamic
+      // import() walks straight past it — and past tsconfig.core.json too, whenever the module
+      // it pulls in happens to be DOM-free. Only a literal specifier can be caught here.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportExpression[source.value=/(^|\\/)(render|app)(\\/|$)/]',
+          message: CORE_IS_PURE,
+        },
+      ],
     },
   },
 
   {
-    files: ['src/render/**/*.ts', 'src/app/**/*.ts'],
+    files: ['src/render/**/*.{ts,tsx,mts,cts}', 'src/app/**/*.{ts,tsx,mts,cts}'],
     languageOptions: { globals: globals.browser },
   },
 );

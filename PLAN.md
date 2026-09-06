@@ -9,9 +9,10 @@ Carried into increment 1:
 - **`Date.now()` is reachable from core** and no config can exclude it (it is in the ES lib, not
   the DOM lib). Time must be *injected* into `step()`, not read — same hazard class as
   `Math.random`, but unenforceable mechanically, so it belongs in the spec.
-- The core-boundary guards ship with known holes (dynamic `import()`, inline `eslint-disable`,
-  tests co-located under `src/` being skipped). Details in `JOURNAL.md`; harden when one bites,
-  or as a standalone chore before increment 5.
+- The core-boundary guards were hardened after review (dynamic `import()`, inline `eslint-disable`,
+  co-located tests, warnings, file-extension globs). Two gaps remain open on purpose: the
+  pre-commit hook checks the working tree rather than the index, and `npm run check` never runs
+  `vite build`. Both are in `JOURNAL.md`.
 
 How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning lives in `WORKFLOW.md`.
 

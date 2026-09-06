@@ -17,6 +17,9 @@ Stand up the toolchain and the mechanical guards. No game behaviour.
      `no-restricted-imports` for `render/` and `app/`.
   3. Project-wide ESLint ban on `Math.random` (CLAUDE.md hard rule; the seeded RNG arrives in
      increment 1).
+
+  Core additionally bans dynamic `import()` of `render/` and `app/`, and sets `noInlineConfig` so
+  an `eslint-disable` comment cannot opt out. `eslint . --max-warnings 0` makes warnings fail.
 - **`test/core/boundary.test.ts`** — lints probe sources through the ESLint API and asserts each
   violation is actually reported, so the guard cannot silently stop matching `src/core/**`. Also
   asserts the core suite runs with no `document`/`window` in scope.

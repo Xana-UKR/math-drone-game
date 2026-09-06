@@ -10,26 +10,44 @@ import { describe, expect, it } from 'vitest';
 
 const eslint = new ESLint();
 
+const CORE = 'src/core/__probe.ts';
+const RENDER = 'src/render/__probe.ts';
+
 async function ruleIdsFor(filePath: string, code: string): Promise<string[]> {
   const [result] = await eslint.lintText(code, { filePath });
   if (result === undefined) throw new Error(`ESLint returned no result for ${filePath}`);
   return result.messages.map((message) => message.ruleId ?? '(fatal)');
 }
 
-const CORE = 'src/core/__probe.ts';
-const RENDER = 'src/render/__probe.ts';
+/**
+ * Read the banned list out of the *effective* config rather than restating it here, so adding a
+ * global to eslint.config.js automatically puts it under test — and so a config that stops
+ * applying to CORE at all (a renamed folder, a changed vitest cwd) fails by name.
+ */
+async function bannedGlobalsInCore(): Promise<string[]> {
+  const config: unknown = await eslint.calculateConfigForFile(CORE);
+  const rules = (config as { rules?: Record<string, unknown> }).rules;
+  const entry = rules?.['no-restricted-globals'];
+  if (!Array.isArray(entry)) {
+    throw new Error(
+      `no-restricted-globals is not configured for ${CORE} — the src/core/** override does not ` +
+        'match this path, so none of the boundary assertions below mean anything.',
+    );
+  }
+  const [, ...banned] = entry as unknown[];
+  return banned.map((item) => (typeof item === 'string' ? item : (item as { name: string }).name));
+}
 
 describe('src/core/ boundary is enforced by ESLint', () => {
-  it('rejects a DOM global', async () => {
-    expect(await ruleIdsFor(CORE, 'export const t = document.title;\n')).toContain(
-      'no-restricted-globals',
-    );
-  });
-
-  it('rejects window', async () => {
-    expect(await ruleIdsFor(CORE, 'export const w = window.innerWidth;\n')).toContain(
-      'no-restricted-globals',
-    );
+  it('rejects every global on the banned list', async () => {
+    const names = await bannedGlobalsInCore();
+    expect(names.length).toBeGreaterThan(10);
+    for (const name of names) {
+      const ruleIds = await ruleIdsFor(CORE, `export const probe = ${name};\n`);
+      expect(ruleIds, `${name} is on the banned list but was not rejected`).toContain(
+        'no-restricted-globals',
+      );
+    }
   });
 
   it('rejects an import from render/', async () => {
@@ -40,6 +58,18 @@ describe('src/core/ boundary is enforced by ESLint', () => {
 
   it('rejects an import from app/', async () => {
     expect(await ruleIdsFor(CORE, "import '../app/loop';\n")).toContain('no-restricted-imports');
+  });
+
+  it('rejects a dynamic import from render/', async () => {
+    expect(
+      await ruleIdsFor(CORE, "export const load = () => import('../render/scene');\n"),
+    ).toContain('no-restricted-syntax');
+  });
+
+  it('rejects a dynamic import from app/', async () => {
+    expect(await ruleIdsFor(CORE, "export const load = () => import('../app/loop');\n")).toContain(
+      'no-restricted-syntax',
+    );
   });
 
   it('accepts pure TypeScript', async () => {
@@ -60,6 +90,19 @@ describe('Math.random is banned project-wide', () => {
     expect(await ruleIdsFor(RENDER, 'export const r = Math.random();\n')).toContain(
       'no-restricted-properties',
     );
+  });
+});
+
+describe('core cannot opt out of the boundary', () => {
+  const DISABLED_RANDOM =
+    '// eslint-disable-next-line no-restricted-properties\nexport const r = Math.random();\n';
+
+  it('ignores an inline eslint-disable comment', async () => {
+    expect(await ruleIdsFor(CORE, DISABLED_RANDOM)).toContain('no-restricted-properties');
+  });
+
+  it('still honours inline disables outside core', async () => {
+    expect(await ruleIdsFor(RENDER, DISABLED_RANDOM)).not.toContain('no-restricted-properties');
   });
 });
 
