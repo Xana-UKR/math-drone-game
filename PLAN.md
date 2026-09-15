@@ -1,18 +1,22 @@
 # Build Plan
 
-**Status: increment 0 complete (`bed74b9`). Next: increment 1 — tanks move.**
+**Status: increment 1 complete (`e859673`). Next: increment 2 — problem generation.**
 
-Carried into increment 1:
+Carried into increment 2:
 
-- Delete `src/core/placeholder.ts` — it exists only so `tsconfig.core.json` has inputs, and
-  increment 1's spec must name it.
 - **`Date.now()` is reachable from core** and no config can exclude it (it is in the ES lib, not
-  the DOM lib). Time must be *injected* into `step()`, not read — same hazard class as
-  `Math.random`, but unenforceable mechanically, so it belongs in the spec.
+  the DOM lib). Time is *injected* into `step()`, never read. Increment 0 recorded this as
+  "unenforceable mechanically" — **that was wrong.** `no-restricted-properties` already bans
+  `Math.random` project-wide; adding `{ object: 'Date', property: 'now' }` plus a
+  `no-restricted-syntax` selector for `new Date()` gives time the same non-negotiable guard inside
+  `src/core/**`, where `noInlineConfig` means it cannot be disabled per call site. **Increment 2's
+  spec should name `eslint.config.js` and close it** — until then a future increment can write
+  `Date.now()` in core, pass typecheck *and* lint, and silently destroy same-seed reproducibility.
 - The core-boundary guards were hardened after review (dynamic `import()`, inline `eslint-disable`,
   co-located tests, warnings, file-extension globs). Two gaps remain open on purpose: the
   pre-commit hook checks the working tree rather than the index, and `npm run check` never runs
-  `vite build`. Both are in `JOURNAL.md`.
+  `vite build`. The second now has teeth — `src/app/` and `src/render/` carry real code as of
+  increment 1, so nothing mechanical catches a break in them. Both are in `JOURNAL.md`.
 
 How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning lives in `WORKFLOW.md`.
 
@@ -33,7 +37,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **1** | **Tanks move.** Core: `types.ts`, seeded `rng.ts`, `step()` moving tanks right and removing them at the wall. Render: SVG lanes, `<rect>` tanks, number as `<text>`. App: fixed-timestep rAF loop | vertical | You watch tanks cross and vanish + test: after 20 s simulated at speed v, x == wall |
 | **2** | **Problem generation.** Add/sub within 20; all §9 generator constraints; seeded; target tank chosen by the caller. Problem drawn on the base | core | Tests green; a problem shows on the wall matching some tank's number |
 | **3** | **Tap to shoot.** Correct → drone flies the lane, tank dies, new problem. Wrong → diagonal drone off-screen, problem unchanged. One drone in flight; no retargeting | vertical | **First playable moment** — playable endlessly, no stakes |
-| **4a** | **Hearts and losing.** Hearts = 3; a breach costs one and destroys the tank; zero hearts ends the run; full-screen tap-to-restart | vertical | You let tanks through, lose, restart in one tap |
+| **4a** | **Hearts and losing.** Hearts = 3; a breach costs one and destroys the tank; zero hearts ends the run; full-screen tap-to-restart, **each restart drawing a fresh seed** — the played run seeds itself at start, the increment-9 harness injects one, and `core/` never creates its own | vertical | You let tanks through, lose, restart in one tap — and the wave is different each time |
 | **4b** | **Drones, wave and winning.** Pool starts at N; every answer costs one; +1 per M correct; wave of N; win = wave exhausted with hearts remaining; **loss checked first** on simultaneous impact | vertical | You complete a run to a **win**; a test proves the `floor(N/M)` error budget |
 | | *— end of Milestone 1: a complete, ugly, winnable game —* | | |
 | **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `t_answer / traverse_time`, never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
@@ -72,6 +76,16 @@ measured values.
 The critical threshold is **computed** from `t_answer` and traverse time, never typed in — §6 is
 explicit that this is the one threshold that must be derived. Encode it as a function so changing
 `t_answer` moves it automatically.
+
+**`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
+uses, so an unused constant can never drift out of sync with the increment that defines its
+meaning. As of increment 1 it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds` and
+`spawnCount` only.
+
+**Increment 1 ships `spawnCount: 20`, which is not the wave size N = 12 above.** It is a fixed
+pre-wave spawn list, long enough to watch tanks cross, and is named `spawnCount` rather than
+`waveSize` precisely so it claims no wave semantics. Increment 4b introduces the real wave of
+N = 12 and retires it; increment 6's governor retires the fixed list itself.
 
 ## Two disciplines
 

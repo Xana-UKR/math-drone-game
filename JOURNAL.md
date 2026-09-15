@@ -16,6 +16,51 @@ corrections.
 
 ---
 
+## Increment 1 — tanks move (2026-09-15)
+
+**The first failing test was the test's own bug, and the subagent was right to stop.** The suite's
+`simulate` helper drove the loop off a float accumulator — `for (let elapsed = 0; elapsed < seconds;
+elapsed += dt)`. `1/60` is not exactly representable, so 360 additions land on
+`5.999999999999984`, the condition still holds, and a 361st step runs. The tank finished at
+`361/1200` instead of `0.3` — off by exactly one step, ~1600× the tolerance, and it would have
+failed against *any* correct implementation. Fixed by computing the step count
+(`Math.round(seconds / dt)`) instead of accumulating. **The game loop was never affected**: it
+subtracts a consumed step (`while (accumulator >= FIXED_DT)`) rather than comparing a running sum
+against a target, so it cannot over-run. Worth keeping because the two patterns look identical at a
+glance and only one of them is correct.
+
+**"Most tanks spawn in lanes 1 and 2" was the constant seed, not a biased RNG.** Measured: over
+200k draws interleaved exactly as `createGameState` consumes them, lanes come out
+24.90/25.02/25.02/25.06%. The seed in `main.ts` is a literal, so every reload replays one lopsided
+sample — for `20260915` that is `6 7 5 2`, with lane 4 absent until the 13th spawn (~30 s in). And
+20 draws over 4 lanes *is* clumpy: across 100k seeds, a gap of 4–5 between busiest and quietest lane
+is the most common outcome, and a perfect 5/5/5/5 happens 1.1% of the time. **Fair dice look rigged
+at n = 20** — which is exactly why DESIGN.md §6 makes spawning state-dependent rather than random.
+
+**A code-review finding can be right in principle and wrong in its example.** The review said the
+id-uniqueness test only inspected live tanks and would miss `nextId = state.tanks.length + 1`. The
+principle held; the example did not — injecting that regression, the *old* assertion caught it
+(live ids came out `6,7,8,9,9,9,9`). The regression it genuinely missed is one that recycles ids
+only after a tank dies (`id: nextId % 16`): old assertion green, strengthened one red. **Verify the
+failure scenario, not just the reasoning** — otherwise you harden a test against a case it already
+covered and never learn which case it doesn't.
+
+**The increment-0 vitest flake recurred, twice.** Both times `npm run check` reported
+"3 failed / no tests" on the first run immediately after another process wrote source files, and
+passed on re-run; five consecutive runs afterwards were clean. Same signature as increment 0's
+`node_modules/.vite` flake. It matters more now than it did then, because the pre-commit hook runs
+`npm run check` — a red commit gate that is not your code. **Recovery is still: re-run, then delete
+`node_modules/.vite` if it persists.**
+
+**Deferred from review, on purpose.** Spawns released inside one `step` all start at exactly
+`x = 0`, so two in the same lane within one `dt` would be perfectly superimposed forever. It is
+unreachable today (`at = i * 2.5` never collides inside a 1/60 s step) and the fix — offsetting by
+`(time - spawn.at) / laneTraverseSeconds`, which would also remove the up-to-one-frame release lag
+— contradicts the approved test asserting a tank is released at `x = 0`. **Increment 6 owns it**,
+since its governor is what makes arbitrary spawn times reachable.
+
+---
+
 ## Increment 0 — scaffold (2026-09-06)
 
 **The first guards were all fail-open, and `/code-review` found it.** Every layer built in this
