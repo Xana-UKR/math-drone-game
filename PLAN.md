@@ -4,15 +4,22 @@
 
 Carried into increment 3:
 
-- **Increment 5 should land before the target player first plays.** As the ladder stands she enters
-  after 4b, with increment 2's placeholder targeting still in place: the answer is always on the
-  tank nearest the wall, because all tanks move at one speed and the placeholder picks the oldest.
-  That is learnable — tap the front tank, skip the arithmetic — and it is also the *most urgent*
-  tank, which DESIGN.md §6 says must sometimes be excluded as already unsavable. A `t_answer`
-  measured from a session played that way would be measured from a child not doing the math, and
-  increment 9 tunes against that number. Either move 5 ahead of the first session, or treat that
-  session as feel-only and measure later. **Author's call, deferred from increment 2:** variation
-  in which tank carries the answer is wanted, and is increment 5's job.
+- **Hold the target player's first session until increment 5 is in — but do not reorder the ladder.**
+  5 is already the increment after 4b, so this only moves the session, not the work. With increment
+  2's placeholder targeting the answer is always on the tank nearest the wall (every tank moves at
+  one speed and the placeholder picks the oldest), which is learnable: tap the front tank, skip the
+  arithmetic. A `t_answer` measured from a session played that way is measured from a child not
+  doing the math, and increment 9 tunes everything against that number. **What 5 does not fix:** on
+  a crowded board §5 picks its pool from `u_max`, so the critical tier fires and hands you the same
+  front tank the placeholder does. Excluding tanks that are already unsavable is §6's job, in
+  increment 6. 5 buys variety early in a wave, when the relaxed tier lets any tank be the answer —
+  which is the variation this game wants, and reason enough to keep 5 where it is rather than
+  hurrying it forward.
+- **Expect to slow `spawnIntervalSeconds` while building 4a.** At the placeholder config tanks
+  arrive every 2.5 s and cross in 20 s, so at the assumed 5 s answer time the queue grows whatever
+  you target: tanks 8 onward breach and the run is lost around the tenth. That is a spawn-rate
+  problem, not a targeting one. Increment 9 replaces the value with a measured one; until then it
+  is the dial to turn to see a win at all.
 - **The clock is now banned inside `src/core/**`** — this was increment 2's carried item and it is
   closed. `no-restricted-globals` bans the `Date` binding itself (which covers `Date.now()`,
   `Date()`, `new Date()`, an aliased `const D = Date`, and a bare reference) and `globalThis`
@@ -110,5 +117,7 @@ N = 12 and retires it; increment 6's governor retires the fixed list itself.
 
 ## Where the target player enters
 
-**After 4b.** That first unassisted session is the only real source for `t_answer`, and increment 9
-is worthless without it. Watch, don't help, and note how long she stares before tapping.
+**After 5**, not after 4b — see the note at the top. That first unassisted session is the only
+real source for `t_answer`, and increment 9 is worthless without it. Until 5 lands, the answer is
+always on the front tank, which is learnable without doing any arithmetic. Watch, don't help,
+and note how long she stares before tapping.
