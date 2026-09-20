@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { createRng } from '../../src/core/rng';
-import { createGameState, step } from '../../src/core/step';
-import type { Config, GameState, Tank } from '../../src/core/types';
+import { createGameState, ensureProblem, step } from '../../src/core/step';
+import type { Config, GameState, LiveProblem, Tank } from '../../src/core/types';
 import { defaultConfig } from '../../src/core/types';
 
 /**
@@ -18,11 +18,16 @@ const config: Config = {
   laneTraverseSeconds: 20,
   spawnIntervalSeconds: 2.5,
   spawnCount: 20,
+  answerMin: 0,
+  answerMax: 20,
+  operandMin: 0,
+  operandMax: 20,
+  allowCarry: true,
 };
 
 /** A board with no pending spawns, so movement tests are independent of the schedule. */
 function boardOf(tanks: Tank[]): GameState {
-  return { time: 0, tanks, pending: [], nextId: tanks.length + 1 };
+  return { time: 0, tanks, pending: [], nextId: tanks.length + 1, problem: null };
 }
 
 function tankAt(x: number, overrides: Partial<Tank> = {}): Tank {
@@ -101,6 +106,7 @@ describe('step — clock and spawning', () => {
     const queued: GameState = {
       time: 0,
       tanks: [],
+      problem: null,
       pending: [{ at: 5, lane: 2, number: 12 }],
       nextId: 1,
     };
@@ -113,6 +119,7 @@ describe('step — clock and spawning', () => {
     const queued: GameState = {
       time: 0,
       tanks: [],
+      problem: null,
       pending: [{ at: 0, lane: 1, number: 17 }],
       nextId: 1,
     };
@@ -125,6 +132,7 @@ describe('step — clock and spawning', () => {
     const queued: GameState = {
       time: 0,
       tanks: [],
+      problem: null,
       pending: [{ at: 0, lane: 1, number: 17 }],
       nextId: 1,
     };
@@ -135,6 +143,7 @@ describe('step — clock and spawning', () => {
     const queued: GameState = {
       time: 0,
       tanks: [],
+      problem: null,
       pending: [
         { at: 0, lane: 0, number: 3 },
         { at: 1, lane: 1, number: 4 },
@@ -234,5 +243,232 @@ describe('step — purity', () => {
     const second = simulate(createGameState(config, createRng(3)), 12);
     expect(first.time).toBe(second.time);
     expect(first.tanks).toEqual(second.tanks);
+  });
+});
+
+/**
+ * Increment 2. A tank's number is an *answer* (DESIGN.md §9), so the numbers on the board are what
+ * the generator has to work with — and two tanks showing the same number would make the problem
+ * ambiguous no matter how good the generator is.
+ */
+
+/**
+ * Run the loop the way `main.ts` does: one rng stream shared between `createGameState` and
+ * `ensureProblem`, and `ensureProblem` inside the fixed timestep, after `step`. Sharing the stream
+ * matters — giving the two functions independent streams from the same seed is also deterministic,
+ * so a test that did that would pass while never exercising the arrangement that ships.
+ */
+function play(seconds: number, seed: number, overrides: Partial<Config> = {}): GameState[] {
+  const dt = 1 / 60;
+  const playConfig: Config = { ...config, ...overrides };
+  const rng = createRng(seed);
+  const frames: GameState[] = [];
+  let current = createGameState(playConfig, rng);
+  const steps = Math.round(seconds / dt);
+  for (let i = 0; i < steps; i += 1) {
+    current = ensureProblem(step(current, dt, playConfig), rng, playConfig);
+    frames.push(current);
+  }
+  return frames;
+}
+
+function problemOf(state: GameState): LiveProblem {
+  const { problem } = state;
+  if (problem === null) throw new Error('expected a live problem');
+  return problem;
+}
+
+describe('createGameState — tank numbers are answers', () => {
+  it('draws every tank number from the configured answer range', () => {
+    const state = createGameState({ ...config, spawnCount: 60 }, createRng(11));
+    for (const spawn of state.pending) {
+      expect(Number.isInteger(spawn.number)).toBe(true);
+      expect(spawn.number).toBeGreaterThanOrEqual(config.answerMin);
+      expect(spawn.number).toBeLessThanOrEqual(config.answerMax);
+    }
+  });
+
+  it('uses most of the answer range across a long schedule', () => {
+    // The exclusion window alone forces ~9 distinct numbers, so a weak bound here would hold even
+    // if the generator collapsed to cycling one window forever. 60 spawns over a range of 21.
+    const state = createGameState({ ...config, spawnCount: 60 }, createRng(11));
+    const range = config.answerMax - config.answerMin + 1;
+    expect(new Set(state.pending.map((spawn) => spawn.number)).size).toBeGreaterThanOrEqual(
+      range - 3,
+    );
+  });
+
+  it('never lets two tanks on screen at once show the same number, at any traverse/interval ratio', () => {
+    // One ratio is not enough. The overlap window is derived from traverse / interval, and the
+    // ratios that break it are the ones sitting at or just below an integer — where a tank
+    // outliving its traverse time by one frame decides whether the next spawn overlaps it.
+    const ratios: Partial<Config>[] = [
+      { laneTraverseSeconds: 20, spawnIntervalSeconds: 2.5 }, // exactly 8
+      { laneTraverseSeconds: 19.999999, spawnIntervalSeconds: 2.5 }, // a hair under 8
+      { laneTraverseSeconds: 19.99, spawnIntervalSeconds: 2.5 },
+      { laneTraverseSeconds: 19.999999, spawnIntervalSeconds: 2 }, // a hair under 10
+      { laneTraverseSeconds: 19.99, spawnIntervalSeconds: 4 },
+      { laneTraverseSeconds: 20, spawnIntervalSeconds: 2.2 }, // 9.09…
+      { laneTraverseSeconds: 20, spawnIntervalSeconds: 3 }, // 6.67
+      { laneTraverseSeconds: 12, spawnIntervalSeconds: 1.5 }, // exactly 8, different scale
+    ];
+
+    for (const ratio of ratios) {
+      const label = `traverse ${ratio.laneTraverseSeconds} / interval ${ratio.spawnIntervalSeconds}`;
+      for (const seed of [1, 2, 3]) {
+        const spawnConfig: Config = { ...config, ...ratio, spawnCount: 40 };
+        let current = createGameState(spawnConfig, createRng(seed));
+        const steps = Math.round(120 / (1 / 60));
+        let mostOnScreen = 0;
+        for (let i = 0; i < steps; i += 1) {
+          current = step(current, 1 / 60, spawnConfig);
+          const numbers = current.tanks.map((tank) => tank.number);
+          mostOnScreen = Math.max(mostOnScreen, numbers.length);
+          expect(new Set(numbers).size, `${label}: duplicate on screen: ${numbers.join()}`).toBe(
+            numbers.length,
+          );
+        }
+        // Guard the assertion above: a board that never got crowded proves nothing.
+        expect(mostOnScreen, `${label}: board never got crowded`).toBeGreaterThan(3);
+      }
+    }
+  });
+
+  it('says which dial is wrong when the answer range is too small for the board', () => {
+    // overlapCount 20 against a range of 4 numbers. The message has to name the range — the raw
+    // `rng.int(0, 0)` error underneath says nothing about why there was nothing to draw from.
+    const tooSmall: Config = { ...config, spawnIntervalSeconds: 1, answerMin: 0, answerMax: 3 };
+    expect(() => createGameState(tooSmall, createRng(1))).toThrow(/answer range/);
+  });
+});
+
+describe('step — the live problem', () => {
+  const board = (): GameState => ({
+    ...boardOf([tankAt(0.9, { id: 1, number: 13 }), tankAt(0.2, { id: 2, lane: 1, number: 7 })]),
+    problem: { a: 8, op: '+', b: 5, answer: 13, targetId: 1 },
+  });
+
+  it('starts a run with no problem', () => {
+    expect(createGameState(config, createRng(1)).problem).toBeNull();
+  });
+
+  it('leaves the problem untouched while its target tank is on the board', () => {
+    expect(step(board(), 0.5, config).problem).toEqual(board().problem);
+  });
+
+  it('clears the problem when its target tank reaches the wall', () => {
+    expect(step(board(), 5, config).problem).toBeNull();
+  });
+
+  it('keeps the problem when a tank that is not the target reaches the wall', () => {
+    const state: GameState = {
+      ...boardOf([tankAt(0.1, { id: 1, number: 13 }), tankAt(0.99, { id: 2, lane: 1, number: 7 })]),
+      problem: { a: 8, op: '+', b: 5, answer: 13, targetId: 1 },
+    };
+    const after = step(state, 1, config);
+    expect(after.tanks.map((tank) => tank.id)).toEqual([1]);
+    expect(after.problem).toEqual(state.problem);
+  });
+
+  it('builds no problem of its own — step stays free of randomness', () => {
+    const empty = boardOf([tankAt(0.2, { id: 1, number: 13 })]);
+    expect(step(empty, 0.5, config).problem).toBeNull();
+  });
+});
+
+describe('ensureProblem', () => {
+  const twoTanks = (): GameState =>
+    boardOf([tankAt(0.9, { id: 5, number: 13 }), tankAt(0.2, { id: 2, lane: 1, number: 7 })]);
+
+  const live = (): GameState => ({
+    ...twoTanks(),
+    problem: { a: 8, op: '+', b: 5, answer: 13, targetId: 5 },
+  });
+
+  it('sets a problem whose answer is the number on a tank currently on the board', () => {
+    const state = ensureProblem(twoTanks(), createRng(3), config);
+    expect(state.tanks.map((tank) => tank.number)).toContain(problemOf(state).answer);
+  });
+
+  it('points the problem at the tank carrying the answer', () => {
+    const state = ensureProblem(twoTanks(), createRng(3), config);
+    const problem = problemOf(state);
+    const target = state.tanks.find((tank) => tank.id === problem.targetId);
+    expect(target?.number).toBe(problem.answer);
+  });
+
+  it('targets the earliest-spawned tank, not the one nearest the wall (placeholder for §5)', () => {
+    expect(problemOf(ensureProblem(twoTanks(), createRng(3), config)).targetId).toBe(2);
+  });
+
+  it('leaves a live problem alone — the answer never changes under the player', () => {
+    expect(ensureProblem(live(), createRng(3), config).problem).toEqual(live().problem);
+  });
+
+  it('draws no randomness when a problem is already live', () => {
+    const rng = createRng(3);
+    ensureProblem(live(), rng, config);
+    expect(rng.next()).toBe(createRng(3).next());
+  });
+
+  it('sets no problem on an empty board, and draws no randomness doing it', () => {
+    const rng = createRng(3);
+    expect(ensureProblem(boardOf([]), rng, config).problem).toBeNull();
+    expect(rng.next()).toBe(createRng(3).next());
+  });
+
+  it('does not mutate the state it is given', () => {
+    const state = twoTanks();
+    const before = clone(state);
+    ensureProblem(state, createRng(3), config);
+    expect(state).toEqual(before);
+  });
+
+  it('replays an identical sequence of problems from the same seed', () => {
+    const run = (): (LiveProblem | null)[] => play(40, 21).map((frame) => frame.problem);
+    expect(run()).toEqual(run());
+  });
+});
+
+describe('a played run keeps DESIGN.md §9 true end to end', () => {
+  const frames = play(60, 31);
+
+  it('shows a problem for most of the run', () => {
+    expect(frames.filter((frame) => frame.problem !== null).length).toBeGreaterThan(
+      frames.length / 2,
+    );
+  });
+
+  it('always has exactly one tank on the board carrying the live answer', () => {
+    for (const frame of frames) {
+      const { problem } = frame;
+      if (problem === null) continue;
+      expect(frame.tanks.filter((tank) => tank.number === problem.answer)).toHaveLength(1);
+    }
+  });
+
+  it('never points the problem at a tank that has left the board', () => {
+    for (const frame of frames) {
+      const { problem } = frame;
+      if (problem === null) continue;
+      expect(frame.tanks.some((tank) => tank.id === problem.targetId)).toBe(true);
+    }
+  });
+
+  it('never re-targets while the current target is still on the board', () => {
+    // DESIGN.md §5: the answer never changes under the player's finger. The condition has to be
+    // "the old target is still there", not "the targetId matches" — keying off the id would skip
+    // every frame where a re-target actually happened, which is the only thing that can fail.
+    let checked = 0;
+    for (let i = 1; i < frames.length; i += 1) {
+      const previous = frames[i - 1]?.problem ?? null;
+      const current = frames[i] ?? null;
+      if (previous === null || current === null) continue;
+      if (!current.tanks.some((tank) => tank.id === previous.targetId)) continue;
+      checked += 1;
+      expect(current.problem).toEqual(previous);
+    }
+    // Guard: if nothing was ever checked the loop above asserts nothing.
+    expect(checked).toBeGreaterThan(frames.length / 2);
   });
 });

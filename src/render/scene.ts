@@ -6,7 +6,8 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const VIEWBOX_WIDTH = 1600;
 const VIEWBOX_HEIGHT = 900;
 
-const WALL_WIDTH = 24;
+/** The base console (DESIGN.md §3): a panel on the right edge whose left face is the wall. */
+const CONSOLE_WIDTH = 240;
 const TANK_WIDTH = 90;
 const TANK_HEIGHT = 60;
 
@@ -16,7 +17,10 @@ export interface Scene {
 }
 
 /**
- * Builds the SVG once: lane bands sized to `config.lanes` and a base wall down the right edge.
+ * Builds the SVG once: lane bands sized to `config.lanes`, and the base console (DESIGN.md §3) —
+ * a panel down the right edge whose left face is the wall every lane terminates on. Widening
+ * CONSOLE_WIDTH therefore also shortens `travel`, the pixels a tank covers in
+ * `laneTraverseSeconds`.
  * `sync(state)` then creates, moves and removes one `<g>` per tank, keyed by id.
  */
 export function createScene(config: Config): Scene {
@@ -36,13 +40,30 @@ export function createScene(config: Config): Scene {
     svg.appendChild(band);
   }
 
-  const wall = document.createElementNS(SVG_NS, 'rect');
-  wall.setAttribute('x', String(VIEWBOX_WIDTH - WALL_WIDTH));
-  wall.setAttribute('y', '0');
-  wall.setAttribute('width', String(WALL_WIDTH));
-  wall.setAttribute('height', String(VIEWBOX_HEIGHT));
-  wall.setAttribute('fill', '#e6edf3');
-  svg.appendChild(wall);
+  // The console's left face is the wall every lane terminates on.
+  const wallFaceX = VIEWBOX_WIDTH - CONSOLE_WIDTH;
+
+  const consolePanel = document.createElementNS(SVG_NS, 'rect');
+  consolePanel.setAttribute('x', String(wallFaceX));
+  consolePanel.setAttribute('y', '0');
+  consolePanel.setAttribute('width', String(CONSOLE_WIDTH));
+  consolePanel.setAttribute('height', String(VIEWBOX_HEIGHT));
+  consolePanel.setAttribute('fill', '#e6edf3');
+  svg.appendChild(consolePanel);
+
+  const problemText = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+  problemText.setAttribute('x', String(wallFaceX + CONSOLE_WIDTH / 2));
+  problemText.setAttribute('y', String(VIEWBOX_HEIGHT / 2));
+  problemText.setAttribute('text-anchor', 'middle');
+  problemText.setAttribute('dominant-baseline', 'central');
+  problemText.setAttribute('fill', '#0b0f14');
+  // 40, not 48: the widest problem the generator can produce is 11 glyphs (`20 - 20 = ?`), and
+  // SVG text is not clipped, so an overflow would render on the lane bands in the console's own
+  // near-black fill — invisible rather than merely ugly.
+  problemText.setAttribute('font-size', '40');
+  problemText.setAttribute('font-family', 'system-ui, sans-serif');
+  problemText.setAttribute('font-weight', 'bold');
+  svg.appendChild(problemText);
 
   const tankLayer = document.createElementNS(SVG_NS, 'g');
   svg.appendChild(tankLayer);
@@ -50,7 +71,7 @@ export function createScene(config: Config): Scene {
   // Map core x so the tank's nose (its right edge, TANK_WIDTH / 2 from centre) sits exactly on the
   // wall's near face at x=1, and the tank's centre sits just off the left edge of the viewBox at x=0.
   const spawnX = -TANK_WIDTH / 2;
-  const wallX = VIEWBOX_WIDTH - WALL_WIDTH - TANK_WIDTH / 2;
+  const wallX = wallFaceX - TANK_WIDTH / 2;
   const travel = wallX - spawnX;
 
   const tankNodes = new Map<number, { g: SVGElement; label: SVGTextElement }>();
@@ -84,6 +105,9 @@ export function createScene(config: Config): Scene {
   }
 
   function sync(state: GameState): void {
+    const { problem } = state;
+    problemText.textContent = problem === null ? '' : `${problem.a} ${problem.op} ${problem.b} = ?`;
+
     const seen = new Set<number>();
 
     for (const tank of state.tanks) {

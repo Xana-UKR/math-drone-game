@@ -120,3 +120,41 @@ describe('the core test suite runs headlessly', () => {
     expect(typeof window).toBe('undefined');
   });
 });
+
+/**
+ * Increment 2 closes the hole PLAN.md carried forward. `Date` is plain JavaScript, not DOM, so
+ * neither tsconfig.core.json (which strips the DOM lib) nor the banned browser-globals list above
+ * catches it — core could read the wall clock, pass every check, and silently stop replaying the
+ * same run from the same seed. Time reaches core as `dt` and no other way.
+ */
+describe('the clock is banned inside core', () => {
+  it('rejects Date.now() in core', async () => {
+    expect(await ruleIdsFor(CORE, 'export const t = Date.now();\n')).toContain(
+      'no-restricted-properties',
+    );
+  });
+
+  it('rejects new Date() in core', async () => {
+    expect(await ruleIdsFor(CORE, 'export const d = new Date();\n')).toContain(
+      'no-restricted-syntax',
+    );
+  });
+
+  it('ignores an inline eslint-disable for the clock', async () => {
+    const disabled =
+      '// eslint-disable-next-line no-restricted-properties\nexport const t = Date.now();\n';
+    expect(await ruleIdsFor(CORE, disabled)).toContain('no-restricted-properties');
+  });
+
+  it('allows Date.now() outside core, where owning a clock is legitimate', async () => {
+    expect(await ruleIdsFor(RENDER, 'export const t = Date.now();\n')).not.toContain(
+      'no-restricted-properties',
+    );
+  });
+
+  it('allows new Date() outside core', async () => {
+    expect(await ruleIdsFor(RENDER, 'export const d = new Date();\n')).not.toContain(
+      'no-restricted-syntax',
+    );
+  });
+});

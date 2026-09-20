@@ -100,3 +100,39 @@ the shell hook out as CRLF and break it, which is why `.gitattributes` pins LF.
 online target the previous majors, so suspect version skew before suspecting the code.
 
 ---
+
+## Increment 2 — problem generation
+
+**A tank outlives its own traverse time by one frame, and that decides the no-duplicates window.**
+`createGameState` excludes the numbers of the spawns that can still be on screen, sized from
+`laneTraverseSeconds / spawnIntervalSeconds`. The obvious formula, `ceil(ratio) - 1`, is wrong: a
+tank is released without moving on its release frame, so it holds the board for `traverse + dt`.
+On the 20 s / 2.5 s default that means **9 tanks share the board for one frame, not 8**. The
+formula that works at every ratio is the plain `ceil(ratio)` — exact where the ratio sits at or
+just below an integer (the cases where the extra frame decides it) and one spare exclusion
+elsewhere. An epsilon-nudged `ceil(ratio + 1e-9) - 1` was tried first and looks right, because it
+fixes the exactly-integer case that the default config happens to be; it still breaks at ratios a
+hair *below* an integer, e.g. traverse 19.999999 with interval 2.5. Core cannot compute the frame
+itself — it never sees `dt`. The regression test tables eight ratios for this reason; one ratio
+cannot catch it, and increment 9 is going to retune `laneTraverseSeconds`.
+
+**Banning a clock in core means banning the `Date` binding, not `Date.now`.** `no-restricted-properties`
+on `{ object: 'Date', property: 'now' }` plus a `NewExpression` selector catches two of six forms.
+`Date()` called plainly, `const D = Date; new D()`, and a bare `Date` reference all walk past both.
+One `no-restricted-globals` entry for `Date` catches all of those — and `globalThis` needs the same
+treatment, since `globalThis.Date` (and `globalThis.document`) is a member access that no
+banned-name list or syntax selector sees. The narrower rules were kept for their specific messages.
+
+**A test with a `continue` in it may be asserting nothing.** The first version of "never changes a
+live problem" skipped frames where `targetId` differed — which is precisely the re-target it was
+meant to catch, so it passed against an `ensureProblem` that re-picked a target every single
+frame. The condition has to be "the old target is still on the board", not "the id still matches".
+Same shape of mistake in a uniqueness test bounded at `> 5` distinct numbers when the exclusion
+window alone forces 9. Both were found by `/code-review`, not by the suite.
+
+**Tests that seed two rng streams do not exercise the wiring that ships.** `main.ts` threads one
+stream from `createGameState` into `ensureProblem`; a test calling `createRng(seed)` twice is
+equally deterministic and passes either way. `play()` now takes a seed and builds the state itself,
+so it mirrors production — this matters at increment 4a, which re-seeds on restart.
+
+---

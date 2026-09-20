@@ -1,5 +1,5 @@
 import { createRng } from '../core/rng';
-import { createGameState, step } from '../core/step';
+import { createGameState, ensureProblem, step } from '../core/step';
 import type { GameState } from '../core/types';
 import { defaultConfig } from '../core/types';
 import { createScene } from '../render/scene';
@@ -18,7 +18,9 @@ const config = defaultConfig;
 const scene = createScene(config);
 app.appendChild(scene.svg);
 
-let state: GameState = createGameState(config, createRng(SEED));
+// Kept so `ensureProblem` below can keep drawing from the same stream `createGameState` started.
+const rng = createRng(SEED);
+let state: GameState = createGameState(config, rng);
 
 let accumulator = 0;
 let lastTime: number | null = null;
@@ -35,6 +37,9 @@ function frame(now: number): void {
 
   while (accumulator >= FIXED_DT) {
     state = step(state, FIXED_DT, config);
+    // Inside the fixed-timestep loop, not once per rAF frame: that would tie rng consumption to
+    // the browser's frame rate and destroy same-seed reproducibility.
+    state = ensureProblem(state, rng, config);
     accumulator -= FIXED_DT;
   }
 

@@ -1,17 +1,25 @@
 # Build Plan
 
-**Status: increment 1 complete (`e859673`). Next: increment 2 — problem generation.**
+**Status: increment 2 complete. Next: increment 3 — tap to shoot.**
 
-Carried into increment 2:
+Carried into increment 3:
 
-- **`Date.now()` is reachable from core** and no config can exclude it (it is in the ES lib, not
-  the DOM lib). Time is *injected* into `step()`, never read. Increment 0 recorded this as
-  "unenforceable mechanically" — **that was wrong.** `no-restricted-properties` already bans
-  `Math.random` project-wide; adding `{ object: 'Date', property: 'now' }` plus a
-  `no-restricted-syntax` selector for `new Date()` gives time the same non-negotiable guard inside
-  `src/core/**`, where `noInlineConfig` means it cannot be disabled per call site. **Increment 2's
-  spec should name `eslint.config.js` and close it** — until then a future increment can write
-  `Date.now()` in core, pass typecheck *and* lint, and silently destroy same-seed reproducibility.
+- **Increment 5 should land before the target player first plays.** As the ladder stands she enters
+  after 4b, with increment 2's placeholder targeting still in place: the answer is always on the
+  tank nearest the wall, because all tanks move at one speed and the placeholder picks the oldest.
+  That is learnable — tap the front tank, skip the arithmetic — and it is also the *most urgent*
+  tank, which DESIGN.md §6 says must sometimes be excluded as already unsavable. A `t_answer`
+  measured from a session played that way would be measured from a child not doing the math, and
+  increment 9 tunes against that number. Either move 5 ahead of the first session, or treat that
+  session as feel-only and measure later. **Author's call, deferred from increment 2:** variation
+  in which tank carries the answer is wanted, and is increment 5's job.
+- **The clock is now banned inside `src/core/**`** — this was increment 2's carried item and it is
+  closed. `no-restricted-globals` bans the `Date` binding itself (which covers `Date.now()`,
+  `Date()`, `new Date()`, an aliased `const D = Date`, and a bare reference) and `globalThis`
+  (which is how `globalThis.Date` and `globalThis.document` would otherwise walk past every other
+  guard). The narrower `no-restricted-properties` and `NewExpression` rules are kept alongside it
+  for their specific messages. Increment 0 recorded this as "unenforceable mechanically" — that
+  was wrong, and `test/core/boundary.test.ts` now proves all six forms.
 - The core-boundary guards were hardened after review (dynamic `import()`, inline `eslint-disable`,
   co-located tests, warnings, file-extension globs). Two gaps remain open on purpose: the
   pre-commit hook checks the working tree rather than the index, and `npm run check` never runs
@@ -70,17 +78,22 @@ measured values.
 | Hearts | 3 | §7 |
 | Drones | start N, +1 per M=3 correct | §7 |
 | Wave size N | 12 | §7 — gives a 4-mistake error budget |
-| Problems | add/sub within 20, no borrowing | §2 default preset |
+| Problems | add/sub within 20, carrying and borrowing allowed | §2 default preset |
 | Distractors | well-separated, not near-misses | §9, for age 7 |
 
 The critical threshold is **computed** from `t_answer` and traverse time, never typed in — §6 is
 explicit that this is the one threshold that must be derived. Encode it as a function so changing
 `t_answer` moves it automatically.
 
+**`allowCarry` ships `true`, reversing this table's original "no borrowing".** `4+3` and `8+7` are
+both "under 20" and wildly different (§10), and the second is the one worth putting in front of a
+7-year-old — increment 9 should tune against the problems she will actually see. It is a `Config`
+knob, so `false` stays available as the easier preset for a younger player.
+
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 1 it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds` and
-`spawnCount` only.
+meaning. As of increment 2 it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
+`spawnCount`, `answerMin`, `answerMax`, `operandMin`, `operandMax` and `allowCarry`.
 
 **Increment 1 ships `spawnCount: 20`, which is not the wave size N = 12 above.** It is a fixed
 pre-wave spawn list, long enough to watch tanks cross, and is named `spawnCount` rather than

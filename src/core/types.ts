@@ -15,11 +15,23 @@ export interface PendingSpawn {
   number: number;
 }
 
+/** Pure arithmetic — `a op b`. Knows nothing about tanks. */
+export interface Problem {
+  a: number;
+  op: '+' | '-';
+  b: number;
+  answer: number;
+}
+
+/** A `Problem` currently displayed, pinned to the tank whose number is its answer. */
+export type LiveProblem = Problem & { targetId: number };
+
 export interface GameState {
   time: number;
   tanks: Tank[];
   pending: PendingSpawn[];
   nextId: number;
+  problem: LiveProblem | null;
 }
 
 /**
@@ -31,6 +43,16 @@ export interface Config {
   readonly laneTraverseSeconds: number;
   readonly spawnIntervalSeconds: number;
   readonly spawnCount: number;
+  readonly answerMin: number;
+  readonly answerMax: number;
+  readonly operandMin: number;
+  readonly operandMax: number;
+  /**
+   * One knob covering both carrying in addition and borrowing in subtraction — DESIGN.md §10
+   * calls this the real difficulty cliff, not magnitude: `4+3` and `8+7` are both "under 20" and
+   * wildly different in difficulty at age five.
+   */
+  readonly allowCarry: boolean;
 }
 
 export const defaultConfig: Config = {
@@ -38,4 +60,9 @@ export const defaultConfig: Config = {
   laneTraverseSeconds: 20,
   spawnIntervalSeconds: 2.5,
   spawnCount: 20,
+  answerMin: 0,
+  answerMax: 20,
+  operandMin: 0,
+  operandMax: 20,
+  allowCarry: true,
 };
