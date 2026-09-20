@@ -177,7 +177,7 @@ testable without rendering anything.
 | Resource | Behaviour |
 |---|---|
 | **Hearts** | Start at 3. A tank reaching the wall costs one heart and is destroyed on impact. |
-| **Drones** | Finite pool. Every answer costs one. Regenerates slowly — one per N correct answers ("resupply"). |
+| **Drones** | Finite pool. Every answer costs one. Regenerates slowly — one per M correct answers ("resupply"). |
 
 ### Run structure: a finite, winnable wave
 
