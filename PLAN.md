@@ -40,7 +40,12 @@ Still carried, from earlier increments:
   increment 6. 5 buys variety early in a wave, when the relaxed tier lets any tank be the answer —
   which is the variation this game wants, and reason enough to keep 5 where it is rather than
   hurrying it forward.
-- **Expect to slow `spawnIntervalSeconds` while building 4a.** At the placeholder config tanks
+- **Apply `spawnIntervalSeconds: 6` and `laneTraverseSeconds: 34` in 4a** — decided 2026-10-03,
+  reasoning in the placeholder-config note below. 4a's spec must name `src/core/types.ts` for it.
+  No test pins `defaultConfig`, so nothing breaks mechanically: every test fixture pins its own
+  config, which is what those "every field pinned" comments are for. The derived critical urgency
+  threshold moves from 0.75 to ~0.85 as a consequence — increment 5 computes it, never types it.
+- **The original note, kept because it is the measurement:** at the placeholder config tanks
   arrive every 2.5 s and cross in 20 s, so at the assumed 5 s answer time the queue grows whatever
   you target: tanks 8 onward breach and the run is lost around the tenth. That is a spawn-rate
   problem, not a targeting one. Increment 9 replaces the value with a measured one; until then it
@@ -105,9 +110,10 @@ measured values.
 | Setting | Value | Source |
 |---|---|---|
 | Lanes | 4 | §3 (3–6; responsive later) |
-| Lane traverse time | 20 s | slow tier per §12 |
+| Lane traverse time | 34 s | slow tier per §12 — **was 20 s; see the note below** |
+| Spawn interval | 6 s | **decided 2026-10-03**; see the note below |
 | `t_answer` assumption | 5 s | §17a.1 placeholder — to be measured, not trusted |
-| **Critical urgency threshold** | **0.75** | *derived*: `t_answer / traverse` = 5/20 (§6.1) |
+| **Critical urgency threshold** | **~0.85** | *derived*: `1 − t_answer / traverse` = 1 − 5/34 (§6.1) |
 | Alert threshold | 0.5 | §5 placeholder |
 | Drone flight time | ~0.4 s | §4 — drama dial, not fairness |
 | Hearts | 3 | §7 |
@@ -118,7 +124,26 @@ measured values.
 
 The critical threshold is **computed** from `t_answer` and traverse time, never typed in — §6 is
 explicit that this is the one threshold that must be derived. Encode it as a function so changing
-`t_answer` moves it automatically.
+`t_answer` *or the traverse time* moves it automatically. This table previously read 0.75 against a
+20 s traverse; the traverse moved and the threshold moved with it, which is exactly why increment 5
+must not type the number in.
+
+**Spawn interval 6 s and traverse 34 s, decided together — 4a applies them.** They are one decision
+because they trade off against each other:
+
+- **Winnability** needs `spawnInterval > t_answer + flight` (≈ 5.4 s). At the old 2.5 s a tank
+  arrived every 2.5 s while the player cleared one every ~5.4 s, so 54% of tanks breached whatever
+  the player did: with 4a's three hearts the run is lost around t = 44 s, every time, regardless of
+  skill. That is a treadmill, not a difficulty curve.
+- **Board crowding** is `laneTraverse / spawnInterval`, and it *is* the number of answers the child
+  chooses between. Raising the interval alone drops the board to ~3 tanks, which guts §9's
+  distractors — three choices is a coin flip, not arithmetic. So the traverse rises with it:
+  34 / 6 ≈ 5.7 tanks on screen, against 8 at the old pair.
+- **Run length** lands at 12 × 6 ≈ 72–80 s, inside §2's 60–90 s.
+
+Both are still placeholders built on an *assumed* 5 s `t_answer`. The measurement that replaces
+them comes from the session after increment 5, and increment 6 retires the fixed interval
+altogether for §6's state-dependent governor.
 
 **`allowCarry` ships `true`, reversing this table's original "no borrowing".** `4+3` and `8+7` are
 both "under 20" and wildly different (§10), and the second is the one worth putting in front of a
