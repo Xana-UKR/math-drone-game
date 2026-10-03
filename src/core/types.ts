@@ -26,12 +26,23 @@ export interface Problem {
 /** A `Problem` currently displayed, pinned to the tank whose number is its answer. */
 export type LiveProblem = Problem & { targetId: number };
 
+/**
+ * One drone, in flight or absent — DESIGN.md §4: one at a time, no retargeting. `x` shares the
+ * tanks' axis: 1 at the wall it launches from, 0 at the far edge. `hit` flies straight down the
+ * target's own lane and carries the id of the tank it will destroy on impact; `miss` carries
+ * neither — render derives its diagonal path from `x` alone.
+ */
+export type Drone =
+  | { kind: 'hit'; x: number; lane: number; targetId: number }
+  | { kind: 'miss'; x: number };
+
 export interface GameState {
   time: number;
   tanks: Tank[];
   pending: PendingSpawn[];
   nextId: number;
   problem: LiveProblem | null;
+  drone: Drone | null;
 }
 
 /**
@@ -53,16 +64,26 @@ export interface Config {
    * wildly different in difficulty at age five.
    */
   readonly allowCarry: boolean;
+  /**
+   * A **speed**, not a per-shot flight duration: the time to cross the full board width, wall to
+   * far edge. DESIGN.md §6's fairness argument is that the gap between drone and tank closes at
+   * `v_drone + v_tank`, so a near tank must die sooner than a distant one — a fixed duration would
+   * break that.
+   */
+  readonly droneTraverseSeconds: number;
 }
 
 export const defaultConfig: Config = {
   lanes: 4,
   laneTraverseSeconds: 20,
   spawnIntervalSeconds: 2.5,
-  spawnCount: 20,
+  // Tanks now die as fast as they are tapped (increment 3), so 20 emptied the board before the
+  // increment could be judged. Still a placeholder, retired by increment 4b's wave.
+  spawnCount: 60,
   answerMin: 0,
   answerMax: 20,
   operandMin: 0,
   operandMax: 20,
   allowCarry: true,
+  droneTraverseSeconds: 0.4,
 };

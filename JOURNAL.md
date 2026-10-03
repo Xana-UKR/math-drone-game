@@ -136,3 +136,63 @@ equally deterministic and passes either way. `play()` now takes a seed and build
 so it mirrors production — this matters at increment 4a, which re-seeds on restart.
 
 ---
+
+## Increment 3 — tap to shoot (2026-10-03)
+
+**A scripted test player that answers too fast tests nothing.** The first version of
+`playWithTaps` answered every 0.5 s. At a 2.5 s spawn interval that clears each tank ~25 steps
+after it spawns, so the board never holds a second tank — every wrong-tap checkpoint found only the
+target, tapped nothing, and `misses` came out 0 while `hits` came out 24, exactly the number of
+spawns. Three invariant tests sitting under it had been passing against a one-tank board. The
+cadence is now PLAN's placeholder `t_answer` of 5 s, which crowds the board to 5-8 tanks and
+breaches the oldest. Guard added: a test asserting the board exceeds 3 tanks during the run, because
+the vacuousness was invisible without one.
+
+**Comparing two moving positions needs both read at the same instant.** The impact test first
+compared the drone's post-move `x` against the tank's pre-move `x`. That is a half-step mismatch,
+and it holds only while the drone is faster than the tank: measured, interception starts failing at
+`droneTraverseSeconds > laneTraverseSeconds` (one step from the wall at 20.5 s, four steps at
+100 s). DESIGN.md §6 claims interception "for any drone speed whatsoever" and increment 9 sweeps
+that value as a pure drama dial, so the mismatch would have surfaced as a fairness bug in a
+simulation, not as a visible one here. Comparing both at the end of the step makes it
+unconditional — verified from 0.4 s to 500 s per board.
+
+**An "unreachable" branch is a claim, and the claim can be wrong.** The orphaned-hit-drone branch
+was commented as unreachable under §6. It was — but only at the shipped config, for the reason
+above. Writing "unreachable" costs nothing; writing *why*, in terms a future reader can re-derive,
+is what makes it checkable.
+
+**Floating-point arrival checks need a tolerance, and need it consistently.** Subtracting
+`(1/60)/0.4` from 1.0 twenty-four times lands at 3.7e-16, not 0, so a bare `x <= 0` costs a
+spurious step; the elapsed-time reformulation lands at 1.1e-16, so it is not an accumulation
+artifact that reordering fixes. The tank's `x < 1` breach check has the same drift and is still
+unguarded — `laneTraverseSeconds: 20` is one of only four plausible values out of 22 that lands
+*above* 1, which is the only reason the drone needed an epsilon and the tank appeared not to.
+Carried to 4a in PLAN.md, where a breach starts costing a heart.
+
+**An input queue that defers taps answers problems the player never saw.** Taps were buffered and
+drained one per fixed step. A double-tap — the ordinary behaviour of a 7-year-old — queued the
+second tap, which then landed on the problem the first one had just caused to re-roll: a guaranteed
+wrong answer, and from 4b a drone spent on it. Taps are now dropped while a drone is in flight, and
+the queue is cleared when a tap launches one. The lesson generalises: input buffered across a state
+change has to be revalidated against the new state or discarded, never replayed.
+
+**`touch-action: manipulation` is load-bearing for a tap-only game.** DESIGN.md §17 claims a
+`click` listener is "correct on touch and mouse with no hit-testing code". On a touch screen that
+is not true without it: a quick second tap is read as double-tap-to-zoom and moves the board
+instead of firing.
+
+**Adding a required field to `GameState` edits the previous increment's test fixtures.** Five
+literals in `step.test.ts` gained `drone: null`; increment 2 did the same when it added `problem`.
+This is mechanical and semantically empty, but it is a file the spec did not name, so it belongs in
+the spec's file list rather than passing unremarked. The alternative — making the field optional —
+would be worse, since every consumer would then handle `undefined`.
+
+**Deferred, with reasons, so they are not rediscovered:** the unused `label` element in
+`scene.ts`'s `tankNodes` map and the duplicated centred-rect boilerplate between `createTankNode`
+and `createDroneNode` both wait for increment 4a's hearts, which add the third rect that makes a
+shared helper worth extracting. `problem.test.ts`'s "Every field is pinned" comment pins only the
+five fields the generator reads — true in effect, wrong as written, and in a file this increment
+had no reason to touch.
+
+---

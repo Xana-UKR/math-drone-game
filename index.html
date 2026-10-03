@@ -18,6 +18,10 @@
         display: block;
         width: 100%;
         height: 100%;
+        /* The whole game is tapping tanks (increment 3), and the target player is 7: a quick
+           second tap must not be read as double-tap-to-zoom, which would move the board instead
+           of firing. Also drops any residual tap delay the browser keeps for that gesture. */
+        touch-action: manipulation;
       }
     </style>
   </head>

@@ -18,6 +18,7 @@ const config: Config = {
   laneTraverseSeconds: 20,
   spawnIntervalSeconds: 2.5,
   spawnCount: 20,
+  droneTraverseSeconds: 0.4,
   answerMin: 0,
   answerMax: 20,
   operandMin: 0,
@@ -27,7 +28,7 @@ const config: Config = {
 
 /** A board with no pending spawns, so movement tests are independent of the schedule. */
 function boardOf(tanks: Tank[]): GameState {
-  return { time: 0, tanks, pending: [], nextId: tanks.length + 1, problem: null };
+  return { time: 0, tanks, pending: [], nextId: tanks.length + 1, problem: null, drone: null };
 }
 
 function tankAt(x: number, overrides: Partial<Tank> = {}): Tank {
@@ -109,6 +110,7 @@ describe('step — clock and spawning', () => {
       problem: null,
       pending: [{ at: 5, lane: 2, number: 12 }],
       nextId: 1,
+      drone: null,
     };
     const early = step(queued, 4.9, config);
     expect(early.tanks).toEqual([]);
@@ -122,6 +124,7 @@ describe('step — clock and spawning', () => {
       problem: null,
       pending: [{ at: 0, lane: 1, number: 17 }],
       nextId: 1,
+      drone: null,
     };
     const tank = onlyTank(step(queued, 1 / 60, config));
     expect(tank.x).toBe(0);
@@ -135,6 +138,7 @@ describe('step — clock and spawning', () => {
       problem: null,
       pending: [{ at: 0, lane: 1, number: 17 }],
       nextId: 1,
+      drone: null,
     };
     expect(step(queued, 1 / 60, config).pending).toEqual([]);
   });
@@ -150,6 +154,7 @@ describe('step — clock and spawning', () => {
         { at: 9, lane: 2, number: 5 },
       ],
       nextId: 1,
+      drone: null,
     };
     const state = step(queued, 2, config);
     expect(state.tanks).toHaveLength(2);

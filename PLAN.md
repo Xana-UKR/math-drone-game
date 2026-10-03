@@ -1,8 +1,33 @@
 # Build Plan
 
-**Status: increment 2 complete. Next: increment 3 — tap to shoot.**
+**Status: increment 3 complete. Next: increment 4a — hearts and losing.**
 
-Carried into increment 3:
+Carried into increment 4a:
+
+- **Fix the tank-breach float drift when breaching starts costing something.** `step` guards the
+  drone's arrival with `DRONE_ARRIVAL_EPSILON` but the tank's `x < 1` breach filter four lines
+  below accumulates the same drift unguarded. Measured: summing `dt / laneTraverseSeconds` at
+  `dt = 1/60` lands *below* 1 at the nominal breach step for 18 of 22 plausible traverse times
+  (5, 6, 7, 8, 11, 12, 13, 14, 15, 17, 18, 21, 22, 24, 30, 40, 45, 50 — residues 3e-15 to 5e-14),
+  so the tank survives one extra step. `laneTraverseSeconds: 20` is one of the four that lands
+  above 1, which is the only reason the drone needed the epsilon and the tank appeared not to.
+  Harmless while a breach is free; from 4a it is the check that spends a heart, and §17a schedules
+  a retune of exactly this value. Apply the same tolerance, or derive both positions from the
+  clock instead of accumulating.
+- **A near-wall tap shows no drone at all — deliberately left for increment 10's polish pass.**
+  A target in the last ~4% of its lane is destroyed in the same fixed step the drone launches, so
+  `scene.sync` never sees a drone and the tank simply vanishes. That is 0.8 s of a 20 s traverse,
+  and it is the dramatic save. The robust fix is a minimum flight duration, which §4 calls a drama
+  dial to be tuned by feel — so it waits for art to feel it against. Reordering the tap drain in
+  `main.ts` would buy one drawn frame, but only when the accumulator runs a single step that frame,
+  so it is not a fix.
+- **`Drone.lane` is redundant, kept on purpose.** Core never branches on it and it is always
+  `tanks.find(t => t.id === targetId).lane`, so by CLAUDE.md's own test ("would deleting it change
+  a run's outcome?") it belongs to render. It stays because the approved spec and tests encode it,
+  and removing it would churn both to change nothing. If increment 6's assertions or increment 9's
+  replay ever have to keep it consistent with the tank, delete it then.
+
+Still carried, from earlier increments:
 
 - **Hold the target player's first session until increment 5 is in — but do not reorder the ladder.**
   5 is already the increment after 4b, so this only moves the session, not the work. With increment
@@ -19,8 +44,11 @@ Carried into increment 3:
   arrive every 2.5 s and cross in 20 s, so at the assumed 5 s answer time the queue grows whatever
   you target: tanks 8 onward breach and the run is lost around the tenth. That is a spawn-rate
   problem, not a targeting one. Increment 9 replaces the value with a measured one; until then it
-  is the dial to turn to see a win at all.
-- **The clock is now banned inside `src/core/**`** — this was increment 2's carried item and it is
+  is the dial to turn to see a win at all. **Increment 3 measured this**: a scripted player
+  answering every 5 s settles the board at 5–8 tanks with the oldest breaching, which is the
+  prediction above holding exactly. The same script answering every 0.5 s never lets a second tank
+  onto the board at all — so any tuning judged against fast answers is measuring nothing.
+- **The clock is banned inside `src/core/**`** — this was increment 2's carried item and it is
   closed. `no-restricted-globals` bans the `Date` binding itself (which covers `Date.now()`,
   `Date()`, `new Date()`, an aliased `const D = Date`, and a bare reference) and `globalThis`
   (which is how `globalThis.Date` and `globalThis.document` would otherwise walk past every other
@@ -99,13 +127,21 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 2 it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
-`spawnCount`, `answerMin`, `answerMax`, `operandMin`, `operandMax` and `allowCarry`.
+meaning. As of increment 3 it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
+`spawnCount`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry` and
+`droneTraverseSeconds`.
 
-**Increment 1 ships `spawnCount: 20`, which is not the wave size N = 12 above.** It is a fixed
-pre-wave spawn list, long enough to watch tanks cross, and is named `spawnCount` rather than
-`waveSize` precisely so it claims no wave semantics. Increment 4b introduces the real wave of
-N = 12 and retires it; increment 6's governor retires the fixed list itself.
+**`droneTraverseSeconds` is a speed, not a flight duration.** It is the time to cross the full
+board width, wall to far edge, so a near tank dies sooner than a distant one. The table's
+"~0.4 s flight time" is therefore the worst case, not every shot. This matters beyond feel: §6's
+fairness argument is that the gap closes at `v_drone + v_tank`, which a fixed per-shot duration
+does not express.
+
+**`spawnCount` is `60` as of increment 3, not the `20` increment 1 shipped and not the wave size
+N = 12 above.** It is a fixed pre-wave spawn list that claims no wave semantics — hence the name.
+20 was long enough to watch tanks cross, but once tanks die as fast as they are tapped it empties
+the board in under a minute, which is too short to judge anything. Increment 4b introduces the
+real wave of N = 12 and retires it; increment 6's governor retires the fixed list itself.
 
 ## Two disciplines
 
