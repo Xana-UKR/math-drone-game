@@ -21,6 +21,20 @@ const DRONE_HEIGHT = 18;
  */
 const DRONE_NOSE_OFFSET = (TANK_WIDTH - DRONE_WIDTH) / 2;
 
+/** Spent-heart glyphs sit at the same spot the remaining ones would, just greyed. */
+const HEART_COLOR_REMAINING = '#d94f4f';
+const HEART_COLOR_SPENT = '#9aa4ae';
+const HEART_SPACING = 48;
+const HEART_FONT_SIZE = 36;
+
+/**
+ * Wall clock, not the fixed timestep: this is input debounce on a decorative overlay, not
+ * gameplay, and CLAUDE.md's motion rule doesn't reach it. A child mid-tap on a tank when the last
+ * heart is lost must not have that same tap land on the overlay and skip straight into a new run
+ * before they have seen the loss.
+ */
+const RESTART_DEBOUNCE_SECONDS = 0.75;
+
 export interface Scene {
   svg: SVGSVGElement;
   sync(state: GameState): void;
@@ -30,13 +44,21 @@ export interface Scene {
  * Builds the SVG once: lane bands sized to `config.lanes`, and the base console (DESIGN.md §3) —
  * a panel down the right edge whose left face is the wall every lane terminates on. Widening
  * CONSOLE_WIDTH therefore also shortens `travel`, the pixels a tank covers in
- * `laneTraverseSeconds`.
+ * `laneTraverseSeconds`. The console also carries one heart glyph per `config.hearts`, above the
+ * problem text.
  * `sync(state)` then creates, moves and removes one `<g>` per tank, keyed by id, and one `<g>` for
- * the drone, in a layer above the tanks. `onSelectTank` is wired to a `click` listener on each
- * tank node as it is created (DESIGN.md §17: tap targeting needs no hit-testing code this way) —
- * render only reports the tap; core decides what it means.
+ * the drone, in a layer above the tanks; recolours the hearts from `state.hearts`; and shows or
+ * hides a full-screen "lost" overlay, appended last so it sits above the drone layer too.
+ * `onSelectTank` is wired to a `click` listener on each tank node as it is created (DESIGN.md §17:
+ * tap targeting needs no hit-testing code this way) — render only reports the tap; core decides
+ * what it means. `onRestart` is wired the same way to the overlay, debounced for
+ * `RESTART_DEBOUNCE_SECONDS` from the moment the overlay appears.
  */
-export function createScene(config: Config, onSelectTank: (tankId: number) => void): Scene {
+export function createScene(
+  config: Config,
+  onSelectTank: (tankId: number) => void,
+  onRestart: () => void,
+): Scene {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -78,12 +100,68 @@ export function createScene(config: Config, onSelectTank: (tankId: number) => vo
   problemText.setAttribute('font-weight', 'bold');
   svg.appendChild(problemText);
 
+  // One ♥ per config.hearts, in a row above the problem, centred on the console.
+  const consoleCenterX = wallFaceX + CONSOLE_WIDTH / 2;
+  const heartsY = VIEWBOX_HEIGHT / 2 - 120;
+  const heartNodes: SVGTextElement[] = [];
+  for (let i = 0; i < config.hearts; i += 1) {
+    const heart = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    heart.setAttribute('x', String(consoleCenterX + (i - (config.hearts - 1) / 2) * HEART_SPACING));
+    heart.setAttribute('y', String(heartsY));
+    heart.setAttribute('text-anchor', 'middle');
+    heart.setAttribute('dominant-baseline', 'central');
+    heart.setAttribute('font-size', String(HEART_FONT_SIZE));
+    heart.setAttribute('font-family', 'system-ui, sans-serif');
+    heart.textContent = '♥';
+    svg.appendChild(heart);
+    heartNodes.push(heart);
+  }
+
   const tankLayer = document.createElementNS(SVG_NS, 'g');
   svg.appendChild(tankLayer);
 
   // Appended after the tank layer, so paint order puts the drone above every tank.
   const droneLayer = document.createElementNS(SVG_NS, 'g');
   svg.appendChild(droneLayer);
+
+  // Appended last of all, so paint order puts it above the drone layer too. Hidden by default —
+  // `sync` reveals it only once `state.outcome === 'lost'`.
+  const overlay = document.createElementNS(SVG_NS, 'g');
+  overlay.setAttribute('display', 'none');
+  overlay.setAttribute('cursor', 'pointer');
+
+  const overlayScrim = document.createElementNS(SVG_NS, 'rect');
+  overlayScrim.setAttribute('x', '0');
+  overlayScrim.setAttribute('y', '0');
+  overlayScrim.setAttribute('width', String(VIEWBOX_WIDTH));
+  overlayScrim.setAttribute('height', String(VIEWBOX_HEIGHT));
+  overlayScrim.setAttribute('fill', '#000000');
+  overlayScrim.setAttribute('fill-opacity', '0.7');
+  overlay.appendChild(overlayScrim);
+
+  const overlayText = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+  overlayText.setAttribute('x', String(VIEWBOX_WIDTH / 2));
+  overlayText.setAttribute('y', String(VIEWBOX_HEIGHT / 2));
+  overlayText.setAttribute('text-anchor', 'middle');
+  overlayText.setAttribute('dominant-baseline', 'central');
+  overlayText.setAttribute('fill', '#ffffff');
+  overlayText.setAttribute('font-size', '72');
+  overlayText.setAttribute('font-family', 'system-ui, sans-serif');
+  overlayText.setAttribute('font-weight', 'bold');
+  overlayText.textContent = 'Tap to play again';
+  overlay.appendChild(overlayText);
+
+  svg.appendChild(overlay);
+
+  // `null` until the overlay has shown at least once; `sync` sets it the step `state.outcome`
+  // first reads `'lost'`, and the click listener below refuses to act until
+  // RESTART_DEBOUNCE_SECONDS has passed since then.
+  let shownAt: number | null = null;
+  overlay.addEventListener('click', () => {
+    if (shownAt !== null && performance.now() - shownAt >= RESTART_DEBOUNCE_SECONDS * 1000) {
+      onRestart();
+    }
+  });
 
   // Map core x so the tank's nose (its right edge, TANK_WIDTH / 2 from centre) sits exactly on the
   // wall's near face at x=1, and the tank's centre sits just off the left edge of the viewBox at x=0.
@@ -95,6 +173,8 @@ export function createScene(config: Config, onSelectTank: (tankId: number) => vo
 
   function createTankNode(number: number): { g: SVGElement; label: SVGTextElement } {
     const g = document.createElementNS(SVG_NS, 'g');
+    // Inherited by the hull and the number, so the label shows a hand rather than an I-beam.
+    g.setAttribute('cursor', 'pointer');
 
     const hull = document.createElementNS(SVG_NS, 'rect');
     hull.setAttribute('x', String(-TANK_WIDTH / 2));
@@ -138,10 +218,23 @@ export function createScene(config: Config, onSelectTank: (tankId: number) => vo
   }
 
   let droneNode: SVGElement | null = null;
+  /** Whether the overlay was shown as of the previous `sync` — the edge `shownAt` is set on. */
+  let wasLost = false;
 
   function sync(state: GameState): void {
     const { problem } = state;
     problemText.textContent = problem === null ? '' : `${problem.a} ${problem.op} ${problem.b} = ?`;
+
+    for (let i = 0; i < heartNodes.length; i += 1) {
+      const heart = heartNodes[i];
+      if (heart === undefined) continue;
+      heart.setAttribute('fill', i < state.hearts ? HEART_COLOR_REMAINING : HEART_COLOR_SPENT);
+    }
+
+    const isLost = state.outcome === 'lost';
+    overlay.setAttribute('display', isLost ? 'inline' : 'none');
+    if (isLost && !wasLost) shownAt = performance.now();
+    wasLost = isLost;
 
     const seen = new Set<number>();
 

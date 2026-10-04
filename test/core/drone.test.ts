@@ -26,6 +26,9 @@ const config: Config = {
   operandMin: 0,
   operandMax: 20,
   allowCarry: true,
+  // Equal to spawnCount: no run can breach more tanks than it spawns, so none here can end. These
+  // tests predate hearts; losing is tested in hearts.test.ts (specs/04a-hearts-and-losing.md).
+  hearts: 60,
 };
 
 const DT = 1 / 60;
@@ -49,7 +52,16 @@ function tankAt(x: number, overrides: Partial<Tank> = {}): Tank {
 
 /** A board with no pending spawns and no drone, so a test is independent of the spawn schedule. */
 function boardOf(tanks: Tank[], problem: LiveProblem | null = null): GameState {
-  return { time: 0, tanks, pending: [], nextId: tanks.length + 1, problem, drone: null };
+  return {
+    time: 0,
+    tanks,
+    pending: [],
+    nextId: tanks.length + 1,
+    problem,
+    drone: null,
+    hearts: config.hearts,
+    outcome: 'playing',
+  };
 }
 
 /** The answer 13 is on tank 1 in lane 2; tank 2 carries a distractor in another lane. */

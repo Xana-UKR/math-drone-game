@@ -24,11 +24,23 @@ const config: Config = {
   operandMin: 0,
   operandMax: 20,
   allowCarry: true,
+  // Equal to spawnCount: no run can breach more tanks than it spawns, so none here can end. These
+  // tests predate hearts; losing is tested in hearts.test.ts (specs/04a-hearts-and-losing.md).
+  hearts: 20,
 };
 
 /** A board with no pending spawns, so movement tests are independent of the schedule. */
 function boardOf(tanks: Tank[]): GameState {
-  return { time: 0, tanks, pending: [], nextId: tanks.length + 1, problem: null, drone: null };
+  return {
+    time: 0,
+    tanks,
+    pending: [],
+    nextId: tanks.length + 1,
+    problem: null,
+    drone: null,
+    hearts: config.hearts,
+    outcome: 'playing',
+  };
 }
 
 function tankAt(x: number, overrides: Partial<Tank> = {}): Tank {
@@ -111,6 +123,8 @@ describe('step — clock and spawning', () => {
       pending: [{ at: 5, lane: 2, number: 12 }],
       nextId: 1,
       drone: null,
+      hearts: config.hearts,
+      outcome: 'playing',
     };
     const early = step(queued, 4.9, config);
     expect(early.tanks).toEqual([]);
@@ -125,6 +139,8 @@ describe('step — clock and spawning', () => {
       pending: [{ at: 0, lane: 1, number: 17 }],
       nextId: 1,
       drone: null,
+      hearts: config.hearts,
+      outcome: 'playing',
     };
     const tank = onlyTank(step(queued, 1 / 60, config));
     expect(tank.x).toBe(0);
@@ -139,6 +155,8 @@ describe('step — clock and spawning', () => {
       pending: [{ at: 0, lane: 1, number: 17 }],
       nextId: 1,
       drone: null,
+      hearts: config.hearts,
+      outcome: 'playing',
     };
     expect(step(queued, 1 / 60, config).pending).toEqual([]);
   });
@@ -155,6 +173,8 @@ describe('step — clock and spawning', () => {
       ],
       nextId: 1,
       drone: null,
+      hearts: config.hearts,
+      outcome: 'playing',
     };
     const state = step(queued, 2, config);
     expect(state.tanks).toHaveLength(2);

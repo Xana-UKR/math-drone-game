@@ -3,15 +3,18 @@ import type { Rng } from './rng';
 import type { Config, Drone, GameState, LiveProblem, PendingSpawn, Tank } from './types';
 
 /**
- * The drone's `x` accumulates by repeatedly subtracting `dt / droneTraverseSeconds`, a fraction
- * of a second that (like most of them) has no exact binary representation. Over enough steps that
- * rounding drifts — e.g. at the defaults, 24 steps of a 1/60 s `dt` land a few `1e-16` above an
- * arrival that is mathematically exact at 0 — so an arrival check of exactly `<= 0` (or
- * `<= target.x`) can miss by one whole step. The tolerance absorbs that drift; it is many orders
- * of magnitude below the smallest single-step advance the game can produce, so it never changes
- * which step a drone visibly arrives on.
+ * Both the drone's and a tank's `x` accumulate by repeatedly adding or subtracting a fraction of
+ * a second — `dt / droneTraverseSeconds` or `dt / laneTraverseSeconds` — that (like most of them)
+ * has no exact binary representation. Over enough steps that rounding drifts, an arrival check of
+ * exactly `<= 0` (for the drone) or `>= 1` (for a tank's breach) can miss by one whole step: e.g.
+ * at the drone's defaults, 24 steps of a 1/60 s `dt` land a few `1e-16` *above* an arrival that is
+ * mathematically exact at 0, and PLAN.md measured that summing `dt / laneTraverseSeconds` lands a
+ * few `1e-15` to `5e-14` *below* 1 at the nominal breach step for most plausible traverse times —
+ * both directions let the thing outlive the step it should resolve on. The tolerance absorbs
+ * either drift; it is many orders of magnitude below the smallest single-step advance the game can
+ * produce, so it never changes which step a drone arrives or a tank breaches on.
  */
-const DRONE_ARRIVAL_EPSILON = 1e-9;
+const ARRIVAL_EPSILON = 1e-9;
 
 /**
  * Builds the entire fixed spawn list up front — the only place randomness is consumed by spawn
@@ -29,8 +32,8 @@ export function createGameState(config: Config, rng: Rng): GameState {
   // Spawn `i + k` overlaps spawn `i` while `k * spawnIntervalSeconds` is less than the time spawn
   // `i` spends on the board. That time is `laneTraverseSeconds + dt`, not `laneTraverseSeconds`:
   // a tank is released without moving on its release frame, so it outlives its own traverse time
-  // by one step — on the 20 s / 2.5 s default, 9 tanks share the board for a frame, not 8. Core
-  // does not know `dt` and so cannot size that extra frame. Taking the plain `ceil` of the ratio
+  // by one step — on increment 1's 20 s / 2.5 s pair, 9 tanks shared the board for a frame, not
+  // 8. Core does not know `dt` and so cannot size that extra frame. Taking the plain `ceil` of the ratio
   // covers it at every ratio: it is exact when the ratio sits at or just below an integer — the
   // cases where that extra frame decides the overlap — and errs by one spare exclusion elsewhere.
   const overlapCount = Math.max(
@@ -65,7 +68,16 @@ export function createGameState(config: Config, rng: Rng): GameState {
     if (onScreen.length > overlapCount) onScreen.shift();
   }
 
-  return { time: 0, tanks: [], pending, nextId: 1, problem: null, drone: null };
+  return {
+    time: 0,
+    tanks: [],
+    pending,
+    nextId: 1,
+    problem: null,
+    drone: null,
+    hearts: config.hearts,
+    outcome: 'playing',
+  };
 }
 
 /**
@@ -97,14 +109,28 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * dev-build assertion.) A `miss` drone is simply removed once its new `x` reaches 0.
  *
  * Releases every pending spawn whose time has come, moves each surviving tank right by
- * `dt / laneTraverseSeconds`, and retires any tank that reached the wall. Also clears
- * `state.problem` when its target tank is no longer on the board — DESIGN.md §5: the answer
- * re-rolls the moment its tank is gone, and never changes otherwise. That one clause also covers
- * a drone's impact for free, since the target is already gone from `tanks` by the time it runs.
- * `ensureProblem` is the only function that sets a new problem, so `step` still consumes no
- * randomness. Pure: never mutates `state`, its tanks, or its drone.
+ * `dt / laneTraverseSeconds`, and retires any tank that reached the wall — using the same
+ * `ARRIVAL_EPSILON` tolerance as the drone, so a tank breaches on its nominal step rather than
+ * surviving one step too long on the traverse times PLAN.md measured drifting the other way
+ * (see `ARRIVAL_EPSILON`'s comment). Each tank retired this way, as opposed to one the drone
+ * already removed above, costs one heart (DESIGN.md §4.6–7); hearts clamp at zero even when more
+ * tanks breach in the same step than hearts remain, and reaching zero sets `outcome: 'lost'` in
+ * this same step. Also clears `state.problem` when its target tank is no longer on the board —
+ * DESIGN.md §5: the answer re-rolls the moment its tank is gone, and never changes otherwise. That
+ * one clause also covers a drone's impact for free, since the target is already gone from `tanks`
+ * by the time it runs. `ensureProblem` is the only function that sets a new problem, so `step`
+ * still consumes no randomness. Pure: never mutates `state`, its tanks, or its drone.
+ *
+ * Once a run is lost, `step` returns `state` itself — same reference, no rng drawn — so the board
+ * freezes exactly as it stood at the moment of loss — the remaining tanks, the problem and the
+ * spent hearts — and the headless harness gets a run that stops on its own instead of one it must
+ * remember to halt. The tank that took the last heart is *not* on it: like every breaching tank it
+ * is destroyed on impact (DESIGN.md §4.6, §7). Showing that moment is a render effect at the wall
+ * (increment 10), not a special case here.
  */
 export function step(state: GameState, dt: number, config: Config): GameState {
+  if (state.outcome !== 'playing') return state;
+
   const time = state.time + dt;
   const advance = dt / config.laneTraverseSeconds;
 
@@ -115,13 +141,13 @@ export function step(state: GameState, dt: number, config: Config): GameState {
     const x = drone.x - dt / config.droneTraverseSeconds;
 
     if (drone.kind === 'miss') {
-      drone = x <= DRONE_ARRIVAL_EPSILON ? null : { kind: 'miss', x };
+      drone = x <= ARRIVAL_EPSILON ? null : { kind: 'miss', x };
     } else {
       const { targetId, lane } = drone;
       const target = tanks.find((tank) => tank.id === targetId);
       if (target === undefined) {
         drone = null;
-      } else if (x <= target.x + advance + DRONE_ARRIVAL_EPSILON) {
+      } else if (x <= target.x + advance + ARRIVAL_EPSILON) {
         tanks = tanks.filter((tank) => tank.id !== targetId);
         drone = null;
       } else {
@@ -139,7 +165,12 @@ export function step(state: GameState, dt: number, config: Config): GameState {
 
   const movedTanks = tanks
     .map((tank) => ({ ...tank, x: tank.x + advance }))
-    .filter((tank) => tank.x < 1);
+    .filter((tank) => tank.x < 1 - ARRIVAL_EPSILON);
+
+  // Every tank that moved but did not survive the filter above breached the wall this step —
+  // a tank the drone already destroyed never reaches this point, so it costs nothing.
+  const breaches = tanks.length - movedTanks.length;
+  const hearts = Math.max(0, state.hearts - breaches);
 
   let nextId = state.nextId;
   const releasedTanks: Tank[] = due.map((spawn) => {
@@ -154,15 +185,24 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   const nextProblem: LiveProblem | null =
     problem !== null && !nextTanks.some((tank) => tank.id === problem.targetId) ? null : problem;
 
-  return { time, tanks: nextTanks, pending, nextId, problem: nextProblem, drone };
+  return {
+    time,
+    tanks: nextTanks,
+    pending,
+    nextId,
+    problem: nextProblem,
+    drone,
+    hearts,
+    outcome: hearts <= 0 ? 'lost' : 'playing',
+  };
 }
 
 /**
  * The single entry point for a player decision (DESIGN.md §8: recall mode resolves a typed number
- * to the same tank id this handles). Returns `state` unchanged, and draws no rng, when a drone is
- * already in flight (§4: one at a time; §16: no retargeting), when no problem is live, or when
- * `tankId` names no tank currently on the board (§8: a number no tank carries is rejected
- * outright).
+ * to the same tank id this handles). Returns `state` unchanged, and draws no rng, when the run is
+ * no longer `'playing'` (a lost run takes no more taps), when a drone is already in flight (§4:
+ * one at a time; §16: no retargeting), when no problem is live, or when `tankId` names no tank
+ * currently on the board (§8: a number no tank carries is rejected outright).
  *
  * Otherwise launches a drone at `x = 1`, the wall: `hit` in the tapped tank's own lane when it
  * carries the live answer, `miss` (no lane, no target) otherwise. Does **not** destroy the tapped
@@ -170,6 +210,7 @@ export function step(state: GameState, dt: number, config: Config): GameState {
  * the tap, and a blank console mid-flight would read as a bug. Pure: never mutates `state`.
  */
 export function selectTank(state: GameState, tankId: number): GameState {
+  if (state.outcome !== 'playing') return state;
   if (state.drone !== null) return state;
   const { problem } = state;
   if (problem === null) return state;
@@ -187,14 +228,16 @@ export function selectTank(state: GameState, tankId: number): GameState {
 
 /**
  * Sets a new live problem when there is none and tanks exist to ask about. Returns `state`
- * unchanged — and draws no rng — when a problem is already live (§5: the answer never changes
- * under the player's finger) or the board is empty.
+ * unchanged — and draws no rng — when the run is no longer `'playing'` (a lost run sets no more
+ * problems), when a problem is already live (§5: the answer never changes under the player's
+ * finger), or the board is empty.
  *
  * The target pick here — the earliest-spawned tank still on the board (lowest `id`) — is a
  * **placeholder**. Increment 5 replaces it with DESIGN.md §5's urgency tiers and weighted pick;
  * nothing here should be mistaken for that.
  */
 export function ensureProblem(state: GameState, rng: Rng, config: Config): GameState {
+  if (state.outcome !== 'playing') return state;
   if (state.problem !== null || state.tanks.length === 0) return state;
 
   const target = state.tanks.reduce((earliest, tank) => (tank.id < earliest.id ? tank : earliest));

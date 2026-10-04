@@ -1,26 +1,29 @@
 # Build Plan
 
-**Status: increment 3 complete. Next: increment 4a — hearts and losing.**
+**Status: increment 4a complete. Next: increment 4b — drones, wave and winning.**
 
-Carried into increment 4a:
+Carried into increment 4b:
 
-- **Fix the tank-breach float drift when breaching starts costing something.** `step` guards the
-  drone's arrival with `DRONE_ARRIVAL_EPSILON` but the tank's `x < 1` breach filter four lines
-  below accumulates the same drift unguarded. Measured: summing `dt / laneTraverseSeconds` at
-  `dt = 1/60` lands *below* 1 at the nominal breach step for 18 of 22 plausible traverse times
-  (5, 6, 7, 8, 11, 12, 13, 14, 15, 17, 18, 21, 22, 24, 30, 40, 45, 50 — residues 3e-15 to 5e-14),
-  so the tank survives one extra step. `laneTraverseSeconds: 20` is one of the four that lands
-  above 1, which is the only reason the drone needed the epsilon and the tank appeared not to.
-  Harmless while a breach is free; from 4a it is the check that spends a heart, and §17a schedules
-  a retune of exactly this value. Apply the same tolerance, or derive both positions from the
-  clock instead of accumulating.
+- **Never leave the board empty — DESIGN.md §6's new floor, decided 2026-10-04 in 4a's play
+  session.** When the last tank is gone, release the next spawn at once and pull the rest of the
+  schedule forward by the same amount. At 6 s intervals, clearing the board fast left up to 6 s
+  with nothing to do. 4b rebuilds the spawn list into the wave of N, which is this rule's natural
+  home; it needs core tests (it changes when tanks arrive) and draws no rng.
+- **The pre-hearts test files pin `hearts` to their `spawnCount`** (`step.test.ts` 20,
+  `drone.test.ts` 60) so no run there can end — at 3 hearts two of their assertions fail outright
+  (specs/04a). The drone pool will do the same to those files' long runs: pin the starting pool and
+  resupply so they cannot run dry, and test running dry in 4b's own file.
 - **A near-wall tap shows no drone at all — deliberately left for increment 10's polish pass.**
   A target in the last ~4% of its lane is destroyed in the same fixed step the drone launches, so
-  `scene.sync` never sees a drone and the tank simply vanishes. That is 0.8 s of a 20 s traverse,
-  and it is the dramatic save. The robust fix is a minimum flight duration, which §4 calls a drama
-  dial to be tuned by feel — so it waits for art to feel it against. Reordering the tap drain in
-  `main.ts` would buy one drawn frame, but only when the accumulator runs a single step that frame,
-  so it is not a fix.
+  `scene.sync` never sees a drone and the tank simply vanishes. That is 0.8 s of a 20 s traverse
+  (~1.4 s of 34 s now), and it is the dramatic save. The robust fix is a minimum flight duration,
+  which §4 calls a drama dial to be tuned by feel — so it waits for art to feel it against.
+  Reordering the tap drain in `main.ts` would buy one drawn frame, but only when the accumulator
+  runs a single step that frame, so it is not a fix.
+- **A bang at the wall when a tank breaches — increment 10.** The breaching tank is destroyed on
+  impact (§4.6, §7), including the one that ends the run, so the frozen loss board does not show
+  what got through. Agreed with the author after 4a's `/code-review`: an explosion effect at the
+  wall shows that moment, in render; core gets no special case.
 - **`Drone.lane` is redundant, kept on purpose.** Core never branches on it and it is always
   `tanks.find(t => t.id === targetId).lane`, so by CLAUDE.md's own test ("would deleting it change
   a run's outcome?") it belongs to render. It stays because the approved spec and tests encode it,
@@ -40,11 +43,6 @@ Still carried, from earlier increments:
   increment 6. 5 buys variety early in a wave, when the relaxed tier lets any tank be the answer —
   which is the variation this game wants, and reason enough to keep 5 where it is rather than
   hurrying it forward.
-- **Apply `spawnIntervalSeconds: 6` and `laneTraverseSeconds: 34` in 4a** — decided 2026-10-03,
-  reasoning in the placeholder-config note below. 4a's spec must name `src/core/types.ts` for it.
-  No test pins `defaultConfig`, so nothing breaks mechanically: every test fixture pins its own
-  config, which is what those "every field pinned" comments are for. The derived critical urgency
-  threshold moves from 0.75 to ~0.85 as a consequence — increment 5 computes it, never types it.
 - **The original note, kept because it is the measurement:** at the placeholder config tanks
   arrive every 2.5 s and cross in 20 s, so at the assumed 5 s answer time the queue grows whatever
   you target: tanks 8 onward breach and the run is lost around the tenth. That is a spawn-rate
@@ -128,7 +126,7 @@ explicit that this is the one threshold that must be derived. Encode it as a fun
 20 s traverse; the traverse moved and the threshold moved with it, which is exactly why increment 5
 must not type the number in.
 
-**Spawn interval 6 s and traverse 34 s, decided together — 4a applies them.** They are one decision
+**Spawn interval 6 s and traverse 34 s, decided together — applied in 4a.** They are one decision
 because they trade off against each other:
 
 - **Winnability** needs `spawnInterval > t_answer + flight` (≈ 5.4 s). At the old 2.5 s a tank
@@ -152,9 +150,9 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 3 it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
-`spawnCount`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry` and
-`droneTraverseSeconds`.
+meaning. As of increment 4a it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
+`spawnCount`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
+`droneTraverseSeconds` and `hearts`.
 
 **`droneTraverseSeconds` is a speed, not a flight duration.** It is the time to cross the full
 board width, wall to far edge, so a near tank dies sooner than a distant one. The table's

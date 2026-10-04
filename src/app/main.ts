@@ -3,40 +3,73 @@ import { createGameState, ensureProblem, selectTank, step } from '../core/step';
 import type { GameState } from '../core/types';
 import { defaultConfig } from '../core/types';
 import { createScene } from '../render/scene';
-
-/** Constant so runs are reproducible (DESIGN.md §14); increment 9's harness will vary it. */
-const SEED = 20260915;
+import type { Scene } from '../render/scene';
 
 const FIXED_DT = 1 / 60;
 /** A backgrounded tab must not spiral into hundreds of catch-up steps on return. */
 const MAX_FRAME_SECONDS = 0.25;
 
-const app = document.querySelector<HTMLDivElement>('#app');
-if (app === null) throw new Error('#app not found');
+const appSlot = document.querySelector<HTMLDivElement>('#app');
+if (appSlot === null) throw new Error('#app not found');
+// Reassigned to its own narrowed type so later closures (`startRun`, defined once but called on
+// every restart) see `HTMLDivElement`, not the nullable type `querySelector` returns.
+const app: HTMLDivElement = appSlot;
 
 const config = defaultConfig;
-
-// Kept so `ensureProblem` below can keep drawing from the same stream `createGameState` started.
-const rng = createRng(SEED);
-let state: GameState = createGameState(config, rng);
 
 // Filled by the scene's click listeners, drained at most one per fixed step, inside the loop
 // below and before `step` — the same reason `ensureProblem` sits there: increment 9 replays a run
 // as a pure function of the seed plus the inputs at each step index, which a tap applied once per
 // rAF frame (rather than once per simulated step) would not reproduce.
 const tapQueue: number[] = [];
-const scene = createScene(config, (tankId) => {
-  // Dropped rather than queued while a drone is in flight. DESIGN.md §4 generates the next problem
-  // on impact, so a tap taken now and drained later would answer a problem that no longer exists —
-  // a guaranteed wrong answer the player never aimed at anything, and from increment 4b a drone
-  // spent on it. A child double-tapping is the ordinary case, not the exotic one.
-  if (state.drone !== null) return;
-  tapQueue.push(tankId);
-});
-app.appendChild(scene.svg);
 
+let state: GameState;
+let rng: ReturnType<typeof createRng>;
+let scene: Scene;
 let accumulator = 0;
 let lastTime: number | null = null;
+
+/**
+ * Seeds, creates the state and builds a fresh scene — called once at load and again on every
+ * restart. The app seeds each run (core never creates its own, DESIGN.md §14); increment 9's
+ * harness injects one instead. `crypto.getRandomValues`, not `Math.random` (ESLint-banned
+ * everywhere, but this is also just the better source), logged via `console.info` so a run worth
+ * replaying can be, from the seed alone.
+ *
+ * Builds a new scene rather than reusing the old one: `scene.sync` keys its tank `<g>` nodes by
+ * id, and a fresh run's ids restart at 1 — reusing the scene would hand the new tank 1 the dead
+ * tank 1's node and its stale number.
+ */
+function startRun(): void {
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  if (seed === undefined) throw new Error('crypto.getRandomValues produced no seed');
+  console.info(`Math Drone Defense: seed ${seed}`);
+
+  rng = createRng(seed);
+  state = createGameState(config, rng);
+  tapQueue.length = 0;
+  accumulator = 0;
+
+  if (scene !== undefined) scene.svg.remove();
+  scene = createScene(
+    config,
+    (tankId) => {
+      // Dropped rather than queued while a drone is in flight, or once the run is no longer
+      // playing. DESIGN.md §4 generates the next problem on impact, so a tap taken now and drained
+      // later would answer a problem that no longer exists — a guaranteed wrong answer the player
+      // never aimed at anything, and from increment 4b a drone spent on it. A child double-tapping
+      // is the ordinary case, not the exotic one.
+      if (state.outcome !== 'playing' || state.drone !== null) return;
+      tapQueue.push(tankId);
+    },
+    () => {
+      if (state.outcome !== 'playing') startRun();
+    },
+  );
+  app.appendChild(scene.svg);
+}
+
+startRun();
 
 function frame(now: number): void {
   // Schedule the next frame first: one bad frame (a thrown assertion, increment 6) must not

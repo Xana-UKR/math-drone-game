@@ -22,6 +22,13 @@
            second tap must not be read as double-tap-to-zoom, which would move the board instead
            of firing. Also drops any residual tap delay the browser keeps for that gesture. */
         touch-action: manipulation;
+        /* Numbers are drawn as <text>, which the browser otherwise lets you select and highlight —
+           and a long press on a tablet raises the copy callout instead of nothing (increment 4a). */
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        /* Text nodes would otherwise show the I-beam; scene.ts sets `pointer` on what is tappable. */
+        cursor: default;
       }
     </style>
   </head>

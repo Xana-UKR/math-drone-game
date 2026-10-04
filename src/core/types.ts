@@ -43,11 +43,14 @@ export interface GameState {
   nextId: number;
   problem: LiveProblem | null;
   drone: Drone | null;
+  hearts: number;
+  /** 4b adds `'won'`. */
+  outcome: 'playing' | 'lost';
 }
 
 /**
  * Placeholder tuning values for Milestone 1 (PLAN.md). Only the fields this increment uses —
- * hearts, drones and wave size arrive with the increments that need them.
+ * drones and wave size arrive with the increments that need them.
  */
 export interface Config {
   readonly lanes: number;
@@ -71,12 +74,16 @@ export interface Config {
    * break that.
    */
   readonly droneTraverseSeconds: number;
+  /** DESIGN.md §7: hearts a run starts with; a breach costs one and zero ends the run. */
+  readonly hearts: number;
 }
 
 export const defaultConfig: Config = {
   lanes: 4,
-  laneTraverseSeconds: 20,
-  spawnIntervalSeconds: 2.5,
+  // 34 s / 6 s (PLAN.md, decided 2026-10-03): the placeholder 20 s / 2.5 s crowded the board
+  // faster than a realistic answer time could clear it, losing most runs by the tenth tank.
+  laneTraverseSeconds: 34,
+  spawnIntervalSeconds: 6,
   // Tanks now die as fast as they are tapped (increment 3), so 20 emptied the board before the
   // increment could be judged. Still a placeholder, retired by increment 4b's wave.
   spawnCount: 60,
@@ -86,4 +93,5 @@ export const defaultConfig: Config = {
   operandMax: 20,
   allowCarry: true,
   droneTraverseSeconds: 0.4,
+  hearts: 3,
 };

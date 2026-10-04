@@ -170,6 +170,13 @@ situations by accident and they will feel like the game cheated.
 This is the highest-leverage fairness mechanism in the design, and it is pure logic — fully
 testable without rendering anything.
 
+**The governor also has a floor: never leave the board empty.** When the last tank is gone, the
+next spawn is released at once and the rest of the schedule moves forward by the same amount.
+Found in play (increment 4a): at a 6 s spawn interval, clearing the board fast left up to 6 s with
+nothing to do — the fastest player was punished with the longest wait. With the floor, clearing
+fast shortens the run instead. It decides when tanks arrive, so it is core, and it draws no rng.
+Lands in increment 4b alongside the wave; increment 6's state-dependent governor must keep it.
+
 ---
 
 ## 7. Resources and loss conditions

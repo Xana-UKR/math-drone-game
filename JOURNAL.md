@@ -196,3 +196,18 @@ five fields the generator reads — true in effect, wrong as written, and in a f
 had no reason to touch.
 
 ---
+
+## Increment 4a — hearts and losing
+
+**A run that can end changes what old long-run tests measure.** The first recommendation was to pin
+`hearts: 3` in the pre-hearts test files and accept a shorter live window, on the claim that every
+assertion would still pass. Reading them showed it would not: "gives every tank a distinct id"
+needs every spawn released, and "shows a problem for most of the run" loses its problem at the
+losing breach (the placeholder targets the front tank, which is the one that breaches). Check
+claims about existing tests against their bodies before making them, not after approval.
+
+**The project has no formatter.** `npx prettier` downloaded one and reformatted two test files
+wholesale (double quotes, 80 columns); reverted. Format by hand to the existing style.
+
+**Still deferred:** the shared centred-rect helper (increment 3's note) — 4a's hearts are `<text>`
+glyphs and its overlay is one full-screen rect, so the third centred rect did not arrive.
