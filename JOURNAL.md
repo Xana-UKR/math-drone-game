@@ -236,3 +236,9 @@ stretches; a 30-line throwaway vitest file (deleted, never committed) measured t
 no-visible-number gap at 1.13 s across seeds and answer speeds, and pinned the cause to tanks
 releasing fully off-screen. Vitest only shows `console.log` from such a probe with
 `--reporter=verbose`.
+
+**Post-commit: the "empty field" report was VS Code's Simple Browser.** The author's first play of
+4b was in VS Code's built-in preview, which left a lone moving tank unpainted until another node
+was inserted — so each first tank "appeared late, already shifted right". Vivaldi and headless Edge
+(driven over CDP with Node's built-in WebSocket, no new dependency) both drew it correctly. Lesson:
+when play contradicts a headless probe, check the browser before the code.

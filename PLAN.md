@@ -18,13 +18,13 @@ Decided by the author in 4b's play session (2026-10-09), for 4c and 4d:
   you chose 14"), kept in memory only. Core records each wrong answer — a first slice of
   increment 8's outcome log. Saving them and bringing those facts back next game is later: it
   needs §15 storage and a DESIGN decision on how missed facts return.
-- **Play-session finding, not reproduced headless:** the author saw the field empty "for a long
-  time" and then two tanks at once. A headless player tapping only visible tanks never saw more
-  than 1.13 s without a visible number, and never two arrivals together. That 1.13 s is real: a
-  tank releases fully off-screen (`x = 0` puts its centre half a tank left of the edge) and its
-  number needs ~1.1 s to appear at a 34 s traverse. 4c's starting tanks sit on-screen; refills
-  still enter at `x = 0` — if that reads as empty, start them at the edge. Possibly a stale 4a
-  build in the browser; worth re-checking in 4c's play.
+- **Play-session finding — resolved: the "empty field for ~6 s, then two tanks" was VS Code's
+  built-in browser, not the game.** It did not repaint a lone moving tank until a new node was
+  added; the same build plays correctly in Vivaldi and in headless Edge (DOM sampled every second,
+  screenshots at three window sizes). **Play-test in a real browser, never VS Code's preview.**
+  Separately and real: a tank releases fully off-screen (`x = 0` puts its centre half a tank left
+  of the edge), so its number needs ~1.1 s to appear at a 34 s traverse — worth a look in 4c,
+  whose refills still enter at `x = 0`.
 - **Carried from 4a, still open:** the near-wall tap that shows no drone, and the bang at the wall
   on a breach — both increment 10. `Drone.lane` is redundant, kept on purpose (delete it if
   increment 6 or 9 ever has to keep it consistent with the tank).
