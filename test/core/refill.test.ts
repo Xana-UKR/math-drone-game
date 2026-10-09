@@ -106,16 +106,6 @@ describe('createGameState — the opening board', () => {
     expect(frontLanes.size).toBeGreaterThan(1);
   });
 
-  it('gives the front-most opening tank id 1, ids rising away from the wall', () => {
-    // The placeholder target is the lowest id (increment 2); it must stay the tank nearest the wall.
-    const { tanks } = createGameState(config, createRng(3));
-    const byId = [...tanks].sort((a, b) => a.id - b.id);
-    expect(byId.map((tank) => tank.id)).toEqual([1, 2, 3, 4]);
-    for (let i = 1; i < byId.length; i += 1) {
-      expect(byId[i]?.x ?? Infinity).toBeLessThan(byId[i - 1]?.x ?? -Infinity);
-    }
-  });
-
   it('draws every number of the wave distinct, board and queue together', () => {
     for (const waveSize of [13, 21]) {
       for (const seed of [1, 2, 3, 4, 5]) {

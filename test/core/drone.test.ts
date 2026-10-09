@@ -51,7 +51,7 @@ function tankAt(x: number, overrides: Partial<Tank> = {}): Tank {
   return { id: 1, lane: 0, x, number: 12, ...overrides };
 }
 
-/** A board with no pending spawns and no drone, so a test is independent of the spawn schedule. */
+/** A board with no pending tanks and no drone, so a test is independent of lane refill. */
 function boardOf(tanks: Tank[], problem: LiveProblem | null = null): GameState {
   return {
     time: 0,
@@ -276,13 +276,13 @@ describe('step — the drone resolves before the tanks move (DESIGN.md §6)', ()
  *
  * The player answers every `TAP_EVERY_STEPS` and gets every fourth answer wrong. Wrong answers
  * are counted in *answers*, not in step indices: a fixed `i % n` checkpoint drifts in and out of
- * phase with the spawn interval, and a checkpoint that lands on a board holding only the target
+ * phase with the board's refills, and a checkpoint that lands on a board holding only the target
  * silently taps nothing at all.
  *
- * At a 5 s answer time against a 2.5 s spawn interval, tanks arrive faster than they are cleared,
- * so the board crowds and the oldest tanks start breaching the wall — which is the state the
- * invariants below are worth checking in. PLAN already predicts this queue growth at the
- * placeholder config.
+ * Lane refill (increment 4c) keeps a tank in every lane until the wave's tail, so a wrong tap
+ * always has other tanks to land on, and since increment 5 the target is DESIGN.md §5's urgency
+ * pick rather than the front tank — the crowded, varied board the invariants below are worth
+ * checking in.
  */
 function playWithTaps(
   seconds: number,

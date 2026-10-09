@@ -267,3 +267,19 @@ Recording in `selectTank` also keeps `step` free of the log.
 **One entry per wrong tap, not per problem.** The problem stays live after a miss, so the list can
 show the same problem twice with different choices; that keeps "Wrong answers: N" equal to the
 line count, which a child can check by counting.
+
+---
+
+## Increment 5 — urgency targeting
+
+**Why `2·t_answer + flight`, not `t_answer`:** the critical tier is the last problem a tank can be
+offered on and still be savable. Skipped now, its next chance is after this answer and the drone's
+flight, and then it needs one more `t_answer`. Wrong taps stretch that window further, and the
+formula doesn't cover them — that is the player's time to spend, not the game's to guarantee.
+
+**One `rng.next()` per pick, always** — even from a pool of one — so a seeded replay doesn't
+change stream position depending on how crowded the board was. Exact draws are pinned by
+`targeting.test.ts`.
+
+**Weight `1 + u` is deliberately mild** (2 : 1 at most): the relaxed tier exists for variety, and
+a steeper curve would rebuild the front-tank habit 5 was meant to break.

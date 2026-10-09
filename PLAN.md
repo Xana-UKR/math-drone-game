@@ -1,6 +1,18 @@
 # Build Plan
 
-**Status: increment 4d complete — Milestone 1 done. Next: increment 5 — urgency targeting.**
+**Status: increment 5 complete. Next: the target player's first session (measure `t_answer`), then increment 6 — fairness invariant + spawn governor.**
+
+- **5 landed (specs/05-urgency-targeting.md):** `src/core/targeting.ts` — `criticalThreshold`,
+  `candidatePool`, `pickTarget`; `ensureProblem` uses them. **The critical threshold was
+  re-derived with the author:** "must be offered now", `1 − (2·t_answer + drone flight) / T` ≈
+  0.694, not §6.1's unsavable line (≈ 0.853), which would have made the critical pool hold only
+  lost tanks. DESIGN §5 and §6.1 now say this. `Config` gains `tAnswerSeconds` (5),
+  `alertThreshold` (0.5), `alertPoolSize` (3); the pick is weighted `1 + u`, one `rng.next()` per
+  pick. Opening tank ids no longer run front-most first — nothing reads their order now.
+  **Carried to 6:** the critical pool can still hold a tank past the unsavable line (≈ 0.853), and
+  `1 + u` slightly favours it — excluding it is §6's job. **The session is now unblocked:** the
+  answer is no longer always the front tank. Its measured `t_answer` moves `u_crit` automatically.
+
 
 - **4d landed (specs/04d-end-of-run-summary.md):** `GameState.wrongAnswers` records each wrong
   tap at the `miss` launch (plain problem + chosen number), one entry per tap, so a problem
@@ -42,7 +54,7 @@ Decided by the author in 4b's play session (2026-10-09) — the 4d item below ha
 
 Still carried, from earlier increments:
 
-- **Hold the target player's first session until increment 5 is in — but do not reorder the ladder.**
+- **Resolved by 5 — the session can run now.** *(Original note:)* Hold the target player's first session until increment 5 is in — but do not reorder the ladder.
   5 follows 4c and 4d directly, so this only moves the session, not the work. With increment
   2's placeholder targeting the answer is always on the tank nearest the wall (every tank moves at
   one speed and the placeholder picks the oldest), which is learnable: tap the front tank, skip the
@@ -98,7 +110,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **4c** | **One tank per lane, lane refill.** Start with a staggered tank in every lane; a tank leaving the board (kill or breach) is replaced in its lane at once until the wave runs out; "Tanks left" counter | vertical | The board always holds one tank per lane until the wave's tail; you never face a lone obvious answer mid-wave |
 | **4d** | **End-of-run summary.** Win/lose screen: tanks destroyed, wrong answers, and the list of wrongly answered problems (in memory) | vertical | After a run you can read back every problem you got wrong |
 | | *— end of Milestone 1: a complete, ugly, winnable game —* | | |
-| **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `t_answer / traverse_time`, never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
+| **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `1 − (2·t_answer + flight) / traverse_time` ("must be offered now"), never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
 | **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces 4c's lane refill | core | Setting `t_answer` absurdly high makes the assertion fire |
 | **7** | **Distractor strategies.** Adjacent times-table fact, off-by-one/carry, operand confusion, digit reversal — named, per-tier | core | A test per strategy; age-7 tier yields well-separated distractors |
 | **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor, elapsed time | core | A run dumps records; nothing consumes them yet |
@@ -123,9 +135,9 @@ measured values.
 | Lane traverse time | 34 s | slow tier per §12 — **was 20 s; see the note below** |
 | ~~Spawn interval~~ | ~~6 s~~ | **retired in 4c** — lane refill feeds the board; see the note below |
 | Opening stagger | 0.05 | 4c — opening tanks at 0.025 / 0.075 / 0.125 / 0.175 of the lane |
-| `t_answer` assumption | 5 s | §17a.1 placeholder — to be measured, not trusted |
-| **Critical urgency threshold** | **~0.85** | *derived*: `1 − t_answer / traverse` = 1 − 5/34 (§6.1) |
-| Alert threshold | 0.5 | §5 placeholder |
+| `t_answer` assumption | 5 s | §17a.1 placeholder — to be measured, not trusted (`tAnswerSeconds`) |
+| **Critical urgency threshold** | **~0.69** | *derived*: `1 − (2·t_answer + flight) / traverse` = 1 − 10.4/34 (§5, increment 5). §6.1's unsavable line `1 − t_answer / traverse` ≈ 0.85 is a different number |
+| Alert threshold | 0.5 | §5 placeholder; alert pool = the 3 most urgent (`alertPoolSize`) |
 | Drone flight time | ~0.4 s | §4 — drama dial, not fairness |
 | Hearts | 3 | §7 |
 | Drones | start N, +1 per M=4 correct | §7 — **M = 4 decided 2026-10-09** |
@@ -169,9 +181,10 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 4c it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
+meaning. As of increment 5 it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
 `waveSize`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
-`droneTraverseSeconds`, `hearts` and `resupplyEvery`.
+`droneTraverseSeconds`, `hearts`, `resupplyEvery`, `tAnswerSeconds`, `alertThreshold` and
+`alertPoolSize`.
 
 **`droneTraverseSeconds` is a speed, not a flight duration.** It is the time to cross the full
 board width, wall to far edge, so a near tank dies sooner than a distant one. The table's
@@ -192,7 +205,7 @@ of N = 13, and the drone pool starts at it.
 
 ## Where the target player enters
 
-**After 5**, not after 4b — see the note at the top. That first unassisted session is the only
-real source for `t_answer`, and increment 9 is worthless without it. Until 5 lands, the answer is
-always on the front tank, which is learnable without doing any arithmetic. Watch, don't help,
-and note how long she stares before tapping.
+**Now — 5 has landed.** That first unassisted session is the only real source for `t_answer`, and
+increment 9 is worthless without it. The answer is no longer always on the front tank, so the
+child has to do the arithmetic. Watch, don't help, and note how long she stares before tapping.
+Setting `tAnswerSeconds` to the measured value moves the critical threshold with it.

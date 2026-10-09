@@ -284,10 +284,6 @@ describe('ensureProblem', () => {
     expect(target?.number).toBe(problem.answer);
   });
 
-  it('targets the earliest-spawned tank, not the one nearest the wall (placeholder for §5)', () => {
-    expect(problemOf(ensureProblem(twoTanks(), createRng(3), config)).targetId).toBe(2);
-  });
-
   it('leaves a live problem alone — the answer never changes under the player', () => {
     expect(ensureProblem(live(), createRng(3), config).problem).toEqual(live().problem);
   });

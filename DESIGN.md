@@ -105,11 +105,11 @@ When a new problem is needed:
 ```
 u_max = highest urgency currently on the board
 
-u_max < 0.5    →  candidate pool = all tanks              (relaxed: any tank may be the answer)
-0.5 ≤ u < 0.8  →  candidate pool = the 2–3 most urgent    (alert: narrowing)
-u_max ≥ 0.8    →  candidate pool = tanks above 0.8 only   (critical: usually exactly one)
+u_max ≥ u_crit        →  candidate pool = tanks at or above u_crit only  (critical: usually exactly one)
+u_max ≥ 0.5           →  candidate pool = the 3 most urgent              (alert: narrowing)
+otherwise             →  candidate pool = all tanks                      (relaxed: any tank may be the answer)
 
-pick a target from the pool, weighted toward higher urgency
+pick a target from the pool, weighted by 1 + u (a tank at the wall is twice as likely as a new one)
 build a problem whose answer is that tank's existing number
 ```
 
@@ -117,8 +117,19 @@ Result: when everything has time, any tank can be the answer; when things get ti
 forced to offer the tank that is about to kill you. The "not always the closest" nuance falls out
 of the weighted pick and the pool size.
 
-**Threshold values (0.5 / 0.8) are placeholders.** The critical threshold in particular must be
-derived from §6, not chosen by feel.
+**The alert threshold (0.5) and pool size (3) are placeholders.** The critical threshold `u_crit`
+is derived, never chosen by feel — it is **"must be offered now"**:
+
+```
+u_crit = 1 − (2 · t_answer + drone flight) / traverse_time      ≈ 0.69 at 5 s, 0.4 s, 34 s
+```
+
+A tank passed over for this problem gets its next chance only after this answer and the drone's
+flight, and then still needs a full `t_answer` — so it must be offered now once less than
+`2 · t_answer + flight` of its traverse remains. Critical is checked first, so a `u_crit` derived
+below 0.5 (a very slow player) simply widens the critical tier. *(Increment 5.)* This is **not**
+§6.1's unsavable line `1 − t_answer / traverse` (≈ 0.85): a critical pool built on that line would
+contain only tanks already lost.
 
 ### Edge cases
 
@@ -147,9 +158,11 @@ d  >  v_tank × t_answer
 
 Three things follow:
 
-1. **The critical urgency threshold is not a feel number.** It sits exactly at
-   `v_tank × t_answer`. Anything closer to the wall than that is already unsavable and must never
-   be offered as the answer.
+1. **The unsavable line is not a feel number.** It sits exactly at `v_tank × t_answer` from the
+   wall. Anything closer to the wall than that is already unsavable and must never be offered as
+   the answer (excluding it is increment 6). This is *not* §5's critical threshold — that one sits
+   one answer earlier, at `2 · t_answer + drone flight`, so a tank is offered *before* it crosses
+   this line. Both are derived from the same `t_answer`.
 2. **Drone speed is a drama dial, not a fairness dial.** A slower drone doesn't make tanks
    unsavable — it just means the explosion happens closer to the wall. Tune it purely for feel;
    late saves look terrifying and are still guaranteed.

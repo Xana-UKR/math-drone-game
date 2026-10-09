@@ -1,5 +1,6 @@
 import { generateProblem } from './problem';
 import type { Rng } from './rng';
+import { candidatePool, pickTarget } from './targeting';
 import type { Config, Drone, GameState, LiveProblem, Tank } from './types';
 
 /**
@@ -34,11 +35,10 @@ const ARRIVAL_EPSILON = 1e-9;
  * the same rng stream. The first `min(config.lanes, config.waveSize)` numbers drawn open on the
  * board, one per lane, at the position its lane landed in the shuffle: position `i` sits at
  * `x = (i + 0.5) × config.openingStagger`, so the opening board shows tanks at visibly different
- * depths instead of a wall of them arriving together. Ids go front-most first — the deepest
- * opening tank (largest `x`, the last position) gets id 1, rising away from the wall — so the
- * placeholder target (lowest id, increment 2) is still the tank nearest the wall, as it always
- * was. Every remaining number queues in `pending`, in the order it was drawn — the order lane
- * refill (`step`) releases them in.
+ * depths instead of a wall of them arriving together. Ids only need to be unique (render keys its
+ * nodes by them, a live problem names its tank by one), so they simply count up from 1. Every
+ * remaining number queues in `pending`, in the order it was drawn — the order lane refill (`step`)
+ * releases them in.
  *
  * `config.waveSize` (DESIGN.md §7's N) is the whole run: exactly that many tanks, no more ever
  * drawn. `drones` starts at the same N — the pool and the wave share one number by construction,
@@ -92,7 +92,7 @@ export function createGameState(config: Config, rng: Rng): GameState {
     if (lane === undefined || number === undefined) {
       throw new Error('createGameState: internal error placing the opening board');
     }
-    tanks.push({ id: boardCount - i, lane, x: (i + 0.5) * config.openingStagger, number });
+    tanks.push({ id: i + 1, lane, x: (i + 0.5) * config.openingStagger, number });
   }
 
   return {
@@ -327,15 +327,16 @@ export function selectTank(state: GameState, tankId: number): GameState {
  * more problems), when a problem is already live (§5: the answer never changes under the player's
  * finger), or the board is empty.
  *
- * The target pick here — the earliest-spawned tank still on the board (lowest `id`) — is a
- * **placeholder**. Increment 5 replaces it with DESIGN.md §5's urgency tiers and weighted pick;
- * nothing here should be mistaken for that.
+ * The target is DESIGN.md §5's urgency pick (`targeting.ts`): `candidatePool` narrows the board to
+ * the tier the highest-urgency tank puts it in, then `pickTarget` draws from that pool weighted
+ * toward urgency. Both are pure functions of `state.tanks` and `config`; this is the only place
+ * that feeds them the live rng stream.
  */
 export function ensureProblem(state: GameState, rng: Rng, config: Config): GameState {
   if (state.outcome !== 'playing') return state;
   if (state.problem !== null || state.tanks.length === 0) return state;
 
-  const target = state.tanks.reduce((earliest, tank) => (tank.id < earliest.id ? tank : earliest));
+  const target = pickTarget(candidatePool(state.tanks, config), rng);
 
   const generated = generateProblem(target.number, rng, config);
   return { ...state, problem: { ...generated, targetId: target.id } };

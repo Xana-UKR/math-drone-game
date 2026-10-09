@@ -111,6 +111,25 @@ export interface Config {
   readonly droneTraverseSeconds: number;
   /** DESIGN.md §7: hearts a run starts with; a breach costs one and zero ends the run. */
   readonly hearts: number;
+  /**
+   * DESIGN.md §6.1/§17a.1: the time a player needs to decide on an answer. The whole fairness
+   * system — the critical urgency threshold (`targeting.ts`), and eventually the spawn governor —
+   * is derived from this one number, which §17a.1 calls out as needing to be measured from real
+   * play rather than guessed. A placeholder until that measurement exists.
+   */
+  readonly tAnswerSeconds: number;
+  /**
+   * DESIGN.md §5's 0.5: the urgency at which the candidate pool narrows from the whole board to
+   * the most urgent few (the "alert" tier). Below the derived critical threshold
+   * (`targeting.ts`'s `criticalThreshold`), which always wins when it is lower than this.
+   */
+  readonly alertThreshold: number;
+  /**
+   * DESIGN.md §5's "2–3 most urgent": how many tanks the alert tier's candidate pool holds. 3, not
+   * 2, at 4 lanes — leaves one lane's tank out of the pool rather than handing the pool the whole
+   * board.
+   */
+  readonly alertPoolSize: number;
 }
 
 export const defaultConfig: Config = {
@@ -133,4 +152,9 @@ export const defaultConfig: Config = {
   allowCarry: true,
   droneTraverseSeconds: 0.4,
   hearts: 3,
+  // 5 s (DESIGN.md §17a.1 placeholder, unmeasured): stands in for a per-age-tier value until real
+  // play gives one.
+  tAnswerSeconds: 5,
+  alertThreshold: 0.5,
+  alertPoolSize: 3,
 };
