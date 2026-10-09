@@ -124,6 +124,18 @@ export function createScene(
     heartNodes.push(heart);
   }
 
+  // "Tanks left" (increment 4c) sits between the hearts row and the problem text, same style as
+  // the hearts/drones/destroyed counters — the wave's own countdown, distinct from the drone pool.
+  const tanksLeftText = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+  tanksLeftText.setAttribute('x', String(consoleCenterX));
+  tanksLeftText.setAttribute('y', String((heartsY + VIEWBOX_HEIGHT / 2) / 2));
+  tanksLeftText.setAttribute('text-anchor', 'middle');
+  tanksLeftText.setAttribute('dominant-baseline', 'central');
+  tanksLeftText.setAttribute('font-size', String(COUNTER_FONT_SIZE));
+  tanksLeftText.setAttribute('font-family', 'system-ui, sans-serif');
+  tanksLeftText.setAttribute('fill', COUNTER_COLOR);
+  svg.appendChild(tanksLeftText);
+
   // Two counters below the problem — drones left and tanks destroyed (DESIGN.md §7) — each its
   // own row, with enough gap from problemText's own font-size (40, centred on the same y) that
   // neither ever overlaps it.
@@ -192,8 +204,11 @@ export function createScene(
   });
 
   // Map core x so the tank's nose (its right edge, TANK_WIDTH / 2 from centre) sits exactly on the
-  // wall's near face at x=1, and the tank's centre sits just off the left edge of the viewBox at x=0.
-  const spawnX = -TANK_WIDTH / 2;
+  // wall's near face at x=1, and the tank's tail (its left edge) sits exactly on the viewBox's own
+  // left edge at x=0 — increment 4c's entry fix: a tank's number is readable the instant it enters
+  // rather than ~1.1 s later, when its off-screen half would otherwise have scrolled into view.
+  // Render-only: core still starts every tank at x=0 and knows nothing about pixels.
+  const spawnX = TANK_WIDTH / 2;
   const wallX = wallFaceX - TANK_WIDTH / 2;
   const travel = wallX - spawnX;
 
@@ -258,6 +273,8 @@ export function createScene(
       if (heart === undefined) continue;
       heart.setAttribute('fill', i < state.hearts ? HEART_COLOR_REMAINING : HEART_COLOR_SPENT);
     }
+
+    tanksLeftText.textContent = `Tanks left ${state.tanks.length + state.pending.length}`;
 
     dronesText.textContent = `Drones ${state.drones}`;
     dronesText.setAttribute('fill', state.drones === 0 ? COUNTER_COLOR_EMPTY : COUNTER_COLOR);

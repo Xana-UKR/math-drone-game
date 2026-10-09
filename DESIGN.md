@@ -170,14 +170,20 @@ situations by accident and they will feel like the game cheated.
 This is the highest-leverage fairness mechanism in the design, and it is pure logic — fully
 testable without rendering anything.
 
-**The governor also has a floor: never leave the board empty.** When the last tank is gone, the
-next spawn is released at once and the rest of the schedule moves forward by the same amount.
-Found in play (increment 4a): at a 6 s spawn interval, clearing the board fast left up to 6 s with
-nothing to do — the fastest player was punished with the longest wait. With the floor, clearing
-fast shortens the run instead. It decides when tanks arrive, so it is core, and it draws no rng.
-Landed in increment 4b. *Increment 4c replaces it with a lane-refill model, decided by the author
-after 4b's play session — the floor alone still left one tank on the board, which makes the answer
-obvious. That change rewrites this section when its spec is approved.*
+**Until the governor lands, the board is fed by lane refill: one tank per lane.** A run opens
+with one tank in every lane, at staggered depths `(i + 0.5) × openingStagger` in a seeded random
+lane order (0.05 ships: 0.025 / 0.075 / 0.125 / 0.175 at four lanes, so the opening tanks reach
+the wall ~1.7 s apart rather than together). Whenever a tank leaves the board — destroyed by a
+drone or breaching — the next tank of the wave enters that same lane at once, until the wave runs
+out; then the lanes drain one by one. Every number of a wave is distinct and drawn up front, so
+refilling draws no rng. It decides when tanks arrive, so it is core.
+
+Why: a fixed spawn timer left gaps — first an empty board (increment 4a, patched by an
+empty-board floor in 4b), then, with the floor, a board holding a single tank, and **one tank is
+an obvious answer**. Refill guarantees the child always chooses among as many tanks as there are
+lanes until the wave's tail. *Known gap, left to the governor (increment 6):* two lanes emptied in
+the same step — two breaches, or a kill and a breach — refill side by side and reach the wall
+together. *(Landed in increment 4c; it replaced 4b's floor and the fixed spawn interval.)*
 
 ---
 

@@ -18,7 +18,7 @@ const config: Config = {
   ...defaultConfig,
   lanes: 4,
   laneTraverseSeconds: 20,
-  spawnIntervalSeconds: 2.5,
+  openingStagger: 0.1,
   waveSize: 20,
   droneTraverseSeconds: 0.4,
   answerMin: 0,
@@ -199,7 +199,7 @@ describe('step — losing', () => {
 
 describe('a lost run is frozen', () => {
   it('step returns the lost state unchanged — the clock, the tanks and the pending spawns all stop', () => {
-    const lost = { ...lostState(), pending: [{ at: 0, lane: 2, number: 4 }] };
+    const lost = { ...lostState(), pending: [4] };
     expect(step(lost, DT, config)).toBe(lost);
   });
 

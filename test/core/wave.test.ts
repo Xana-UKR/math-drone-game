@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import type { Rng } from '../../src/core/rng';
 import { createRng } from '../../src/core/rng';
 import { createGameState, ensureProblem, selectTank, step } from '../../src/core/step';
-import type { Config, GameState, LiveProblem, PendingSpawn, Tank } from '../../src/core/types';
+import type { Config, GameState, LiveProblem, Tank } from '../../src/core/types';
 import { defaultConfig } from '../../src/core/types';
 
 /**
  * Increment 4b (specs/04b-drones-wave-winning.md). DESIGN.md §7: a run is a finite wave of N
  * tanks; the drone pool starts at N, every answer costs one, and every M correct answers land one
- * back. The run is won once the wave is exhausted with hearts left — the loss checked first. §6:
- * the board is never left empty while the wave still has tanks to send.
+ * back. The run is won once the wave is exhausted with hearts left — the loss checked first.
+ * (4b's §6 empty-board floor retired in increment 4c; lane refill is in refill.test.ts.)
  */
 
 /** Every field pinned, so retuning `defaultConfig` cannot quietly change what these tests mean. */
@@ -18,7 +18,7 @@ const config: Config = {
   ...defaultConfig,
   lanes: 4,
   laneTraverseSeconds: 34,
-  spawnIntervalSeconds: 6,
+  openingStagger: 0.1,
   waveSize: 13,
   resupplyEvery: 4,
   droneTraverseSeconds: 0.4,
@@ -77,10 +77,6 @@ function flyToEnd(state: GameState): GameState {
   for (let i = 0; i < 600 && current.drone !== null; i += 1) current = step(current, DT, config);
   if (current.drone !== null) throw new Error('fixture: the drone never resolved');
   return current;
-}
-
-function spawnAt(at: number, overrides: Partial<PendingSpawn> = {}): PendingSpawn {
-  return { at, lane: 2, number: 4, ...overrides };
 }
 
 /** An rng that counts its draws, so a test can prove a function drew nothing. */
@@ -181,51 +177,6 @@ describe('step — correct answers and resupply land on impact', () => {
   });
 });
 
-describe('step — the board is never left empty (DESIGN.md §6 floor)', () => {
-  it('releases the next spawn in the same step the last tank on the board breaches', () => {
-    const board = boardOf([tankAt(ONE_STEP_FROM_WALL)], { pending: [spawnAt(10, { lane: 3 })] });
-    const after = step(board, DT, config);
-    expect(after.tanks).toHaveLength(1);
-    expect(after.tanks[0]?.lane).toBe(3);
-    expect(after.tanks[0]?.x).toBe(0);
-    expect(after.pending).toEqual([]);
-  });
-
-  it('releases the next spawn in the same step a drone destroys the last tank on the board', () => {
-    const board = boardOf([tankAt(0.5, { number: 13 })], {
-      problem: PROBLEM_FOR_TANK_1,
-      pending: [spawnAt(30, { lane: 3 })],
-    });
-    const impact = flyToEnd(selectTank(board, 1));
-    expect(impact.tanks.map((tank) => tank.lane)).toEqual([3]);
-  });
-
-  it('pulls every later spawn forward by the same amount', () => {
-    const board = boardOf([tankAt(ONE_STEP_FROM_WALL)], {
-      pending: [spawnAt(10), spawnAt(16, { number: 5 }), spawnAt(22, { number: 6 })],
-    });
-    const after = step(board, DT, config);
-    const shift = 10 - DT;
-    expect(after.pending.map((spawn) => spawn.number)).toEqual([5, 6]);
-    expect(after.pending[0]?.at).toBeCloseTo(16 - shift, 10);
-    expect(after.pending[1]?.at).toBeCloseTo(22 - shift, 10);
-  });
-
-  it('does not fire while any tank is still on the board', () => {
-    const board = boardOf(
-      [tankAt(ONE_STEP_FROM_WALL), tankAt(0.2, { id: 2, lane: 1, number: 7 })],
-      { pending: [spawnAt(10)] },
-    );
-    expect(step(board, DT, config).pending).toEqual([spawnAt(10)]);
-  });
-
-  it('does not fire on a board that starts empty — only on one that becomes empty', () => {
-    const after = step(boardOf([], { pending: [spawnAt(5)] }), DT, config);
-    expect(after.tanks).toEqual([]);
-    expect(after.pending).toEqual([spawnAt(5)]);
-  });
-});
-
 describe('step — winning', () => {
   it('wins in the step a drone destroys the last tank of the wave', () => {
     const launched = selectTank(boardOf([tankAt(0.5, { number: 13 })], { problem: PROBLEM_FOR_TANK_1 }), 1);
@@ -244,8 +195,8 @@ describe('step — winning', () => {
     expect(after.outcome).toBe('won');
   });
 
-  it('does not win while spawns are still pending', () => {
-    const after = step(boardOf([tankAt(ONE_STEP_FROM_WALL)], { pending: [spawnAt(50)] }), DT, config);
+  it('does not win while numbers are still pending', () => {
+    const after = step(boardOf([tankAt(ONE_STEP_FROM_WALL)], { pending: [4] }), DT, config);
     expect(after.outcome).toBe('playing');
   });
 
@@ -374,39 +325,4 @@ describe('the error budget is floor((N − 1) / M) wrong answers (DESIGN.md §7)
       expect(over.final.hearts).toBe(Math.max(0, config.hearts - (waveSize - over.final.correct)));
     });
   }
-});
-
-describe('a fast-cleared run, where the floor fires again and again', () => {
-  const seeds = [41, 42, 43, 44, 45];
-
-  it('releases the whole wave well inside its fixed schedule', () => {
-    for (const seed of seeds) {
-      const { final } = playScripted(config, seed, []);
-      expect(final.outcome).toBe('won');
-      expect(final.time).toBeLessThan((config.waveSize - 1) * config.spawnIntervalSeconds / 2);
-    }
-  });
-
-  it('never shows two tanks with the same number at once, after the schedule has been pulled forward', () => {
-    for (const seed of seeds) {
-      const { frames } = playScripted(config, seed, orderings(3, config.waveSize).spread ?? []);
-      for (const frame of frames) {
-        const numbers = frame.tanks.map((tank) => tank.number);
-        expect(new Set(numbers).size).toBe(numbers.length);
-      }
-    }
-  });
-
-  it('never leaves the board empty mid-wave', () => {
-    for (const seed of seeds) {
-      const { frames } = playScripted(config, seed, []);
-      for (const frame of frames.slice(1)) {
-        if (frame.outcome === 'playing') expect(frame.tanks.length).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it('replays an identical run from the same seed and the same script', () => {
-    expect(playScripted(config, 41, [0, 4]).frames).toEqual(playScripted(config, 41, [0, 4]).frames);
-  });
 });

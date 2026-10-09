@@ -18,8 +18,8 @@ const config: Config = {
   ...defaultConfig,
   lanes: 4,
   laneTraverseSeconds: 20,
-  spawnIntervalSeconds: 2.5,
-  waveSize: 60,
+  openingStagger: 0.1,
+  waveSize: 21,
   droneTraverseSeconds: 0.4,
   answerMin: 0,
   answerMax: 20,
@@ -28,7 +28,7 @@ const config: Config = {
   allowCarry: true,
   // Equal to waveSize: no run here can be lost before its last tank. These
   // tests predate hearts; losing is tested in hearts.test.ts (specs/04a-hearts-and-losing.md).
-  hearts: 60,
+  hearts: 21,
   resupplyEvery: 4,
 };
 

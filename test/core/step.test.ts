@@ -6,8 +6,8 @@ import type { Config, GameState, LiveProblem, Tank } from '../../src/core/types'
 import { defaultConfig } from '../../src/core/types';
 
 /**
- * `step` is the whole of increment 1's behaviour: it owns the clock, releases the fixed spawn
- * list, moves tanks right and retires them at the wall. Core is unitless — x runs 0 at spawn to
+ * `step` is the whole of increment 1's behaviour: it owns the clock, refills lanes from the wave
+ * queue, moves tanks right and retires them at the wall. Core is unitless — x runs 0 at spawn to
  * 1 at the wall — so every position below is a fraction of a lane, not a pixel.
  */
 
@@ -16,7 +16,7 @@ const config: Config = {
   ...defaultConfig,
   lanes: 4,
   laneTraverseSeconds: 20,
-  spawnIntervalSeconds: 2.5,
+  openingStagger: 0.1,
   waveSize: 20,
   droneTraverseSeconds: 0.4,
   answerMin: 0,
@@ -74,37 +74,9 @@ function simulate(state: GameState, seconds: number, dt = 1 / 60): GameState {
 }
 
 describe('createGameState', () => {
-  it('starts with a zero clock and an empty board', () => {
-    const state = createGameState(config, createRng(1));
-    expect(state.time).toBe(0);
-    expect(state.tanks).toEqual([]);
-  });
-
-  it('queues exactly waveSize spawns up front', () => {
+  it('queues waveSize − lanes numbers behind the opening board', () => {
     const state = createGameState({ ...config, waveSize: 7 }, createRng(1));
-    expect(state.pending).toHaveLength(7);
-  });
-
-  it('schedules the first spawn immediately and the rest one interval apart', () => {
-    const schedule = createGameState(
-      { ...config, waveSize: 4, spawnIntervalSeconds: 2.5 },
-      createRng(1),
-    );
-    expect(schedule.pending.map((spawn) => spawn.at)).toEqual([0, 2.5, 5, 7.5]);
-  });
-
-  it('assigns every spawn a lane within the configured lane count', () => {
-    const state = createGameState({ ...config, lanes: 3, waveSize: 40 }, createRng(5));
-    for (const spawn of state.pending) {
-      expect(Number.isInteger(spawn.lane)).toBe(true);
-      expect(spawn.lane).toBeGreaterThanOrEqual(0);
-      expect(spawn.lane).toBeLessThan(3);
-    }
-  });
-
-  it('uses more than one lane across a long schedule', () => {
-    const state = createGameState({ ...config, waveSize: 40 }, createRng(5));
-    expect(new Set(state.pending.map((spawn) => spawn.lane)).size).toBeGreaterThan(1);
+    expect(state.pending).toHaveLength(7 - config.lanes);
   });
 
   it('builds an identical schedule from the same seed', () => {
@@ -118,86 +90,14 @@ describe('step — clock and spawning', () => {
     expect(state.time).toBeCloseTo(0.75, 10);
   });
 
-  it('holds a spawn back until the clock reaches its scheduled time', () => {
-    const queued: GameState = {
-      time: 0,
-      tanks: [],
-      problem: null,
-      pending: [{ at: 5, lane: 2, number: 12 }],
-      nextId: 1,
-      drone: null,
-      hearts: config.hearts,
-      drones: config.waveSize,
-      correct: 0,
-      outcome: 'playing',
-    };
-    const early = step(queued, 4.9, config);
-    expect(early.tanks).toEqual([]);
-    expect(onlyTank(step(early, 0.2, config)).lane).toBe(2);
-  });
-
-  it('releases a spawned tank at the start of its lane', () => {
-    const queued: GameState = {
-      time: 0,
-      tanks: [],
-      problem: null,
-      pending: [{ at: 0, lane: 1, number: 17 }],
-      nextId: 1,
-      drone: null,
-      hearts: config.hearts,
-      drones: config.waveSize,
-      correct: 0,
-      outcome: 'playing',
-    };
-    const tank = onlyTank(step(queued, 1 / 60, config));
-    expect(tank.x).toBe(0);
-    expect(tank.number).toBe(17);
-  });
-
-  it('drops a released spawn from the pending list', () => {
-    const queued: GameState = {
-      time: 0,
-      tanks: [],
-      problem: null,
-      pending: [{ at: 0, lane: 1, number: 17 }],
-      nextId: 1,
-      drone: null,
-      hearts: config.hearts,
-      drones: config.waveSize,
-      correct: 0,
-      outcome: 'playing',
-    };
-    expect(step(queued, 1 / 60, config).pending).toEqual([]);
-  });
-
-  it('releases every due spawn, not just the first', () => {
-    const queued: GameState = {
-      time: 0,
-      tanks: [],
-      problem: null,
-      pending: [
-        { at: 0, lane: 0, number: 3 },
-        { at: 1, lane: 1, number: 4 },
-        { at: 9, lane: 2, number: 5 },
-      ],
-      nextId: 1,
-      drone: null,
-      hearts: config.hearts,
-      drones: config.waveSize,
-      correct: 0,
-      outcome: 'playing',
-    };
-    const state = step(queued, 2, config);
-    expect(state.tanks).toHaveLength(2);
-    expect(state.pending).toHaveLength(1);
-  });
-
   it('gives every tank a distinct id', () => {
     // Ids must be unique across the whole run, not merely among the tanks alive at one instant:
     // scene.ts keys its SVG nodes by id, so a reused id hands a new tank a dead tank's node.
     // Collect every id ever issued and check the count against the number of spawns released.
+    // 90 s, not 50: with no taps each lane refills only on a breach, one traverse (20 s) apart,
+    // so draining a 20-tank wave through 4 lanes takes about four traverses.
     const dt = 1 / 60;
-    const steps = Math.round(50 / dt);
+    const steps = Math.round(90 / dt);
     let current = createGameState(config, createRng(8));
     const ids = new Set<number>();
     for (let i = 0; i < steps; i += 1) {
@@ -316,65 +216,15 @@ function problemOf(state: GameState): LiveProblem {
 
 describe('createGameState — tank numbers are answers', () => {
   it('draws every tank number from the configured answer range', () => {
-    const state = createGameState({ ...config, waveSize: 60 }, createRng(11));
-    for (const spawn of state.pending) {
-      expect(Number.isInteger(spawn.number)).toBe(true);
-      expect(spawn.number).toBeGreaterThanOrEqual(config.answerMin);
-      expect(spawn.number).toBeLessThanOrEqual(config.answerMax);
+    // 21: the whole range, the largest wave whose numbers can all be distinct (increment 4c).
+    const state = createGameState({ ...config, waveSize: 21 }, createRng(11));
+    const numbers = [...state.tanks.map((tank) => tank.number), ...state.pending];
+    expect(numbers).toHaveLength(21);
+    for (const number of numbers) {
+      expect(Number.isInteger(number)).toBe(true);
+      expect(number).toBeGreaterThanOrEqual(config.answerMin);
+      expect(number).toBeLessThanOrEqual(config.answerMax);
     }
-  });
-
-  it('uses most of the answer range across a long schedule', () => {
-    // The exclusion window alone forces ~9 distinct numbers, so a weak bound here would hold even
-    // if the generator collapsed to cycling one window forever. 60 spawns over a range of 21.
-    const state = createGameState({ ...config, waveSize: 60 }, createRng(11));
-    const range = config.answerMax - config.answerMin + 1;
-    expect(new Set(state.pending.map((spawn) => spawn.number)).size).toBeGreaterThanOrEqual(
-      range - 3,
-    );
-  });
-
-  it('never lets two tanks on screen at once show the same number, at any traverse/interval ratio', () => {
-    // One ratio is not enough. The overlap window is derived from traverse / interval, and the
-    // ratios that break it are the ones sitting at or just below an integer — where a tank
-    // outliving its traverse time by one frame decides whether the next spawn overlaps it.
-    const ratios: Partial<Config>[] = [
-      { laneTraverseSeconds: 20, spawnIntervalSeconds: 2.5 }, // exactly 8
-      { laneTraverseSeconds: 19.999999, spawnIntervalSeconds: 2.5 }, // a hair under 8
-      { laneTraverseSeconds: 19.99, spawnIntervalSeconds: 2.5 },
-      { laneTraverseSeconds: 19.999999, spawnIntervalSeconds: 2 }, // a hair under 10
-      { laneTraverseSeconds: 19.99, spawnIntervalSeconds: 4 },
-      { laneTraverseSeconds: 20, spawnIntervalSeconds: 2.2 }, // 9.09…
-      { laneTraverseSeconds: 20, spawnIntervalSeconds: 3 }, // 6.67
-      { laneTraverseSeconds: 12, spawnIntervalSeconds: 1.5 }, // exactly 8, different scale
-    ];
-
-    for (const ratio of ratios) {
-      const label = `traverse ${ratio.laneTraverseSeconds} / interval ${ratio.spawnIntervalSeconds}`;
-      for (const seed of [1, 2, 3]) {
-        const spawnConfig: Config = { ...config, ...ratio, waveSize: 40 };
-        let current = createGameState(spawnConfig, createRng(seed));
-        const steps = Math.round(120 / (1 / 60));
-        let mostOnScreen = 0;
-        for (let i = 0; i < steps; i += 1) {
-          current = step(current, 1 / 60, spawnConfig);
-          const numbers = current.tanks.map((tank) => tank.number);
-          mostOnScreen = Math.max(mostOnScreen, numbers.length);
-          expect(new Set(numbers).size, `${label}: duplicate on screen: ${numbers.join()}`).toBe(
-            numbers.length,
-          );
-        }
-        // Guard the assertion above: a board that never got crowded proves nothing.
-        expect(mostOnScreen, `${label}: board never got crowded`).toBeGreaterThan(3);
-      }
-    }
-  });
-
-  it('says which dial is wrong when the answer range is too small for the board', () => {
-    // overlapCount 20 against a range of 4 numbers. The message has to name the range — the raw
-    // `rng.int(0, 0)` error underneath says nothing about why there was nothing to draw from.
-    const tooSmall: Config = { ...config, spawnIntervalSeconds: 1, answerMin: 0, answerMax: 3 };
-    expect(() => createGameState(tooSmall, createRng(1))).toThrow(/answer range/);
   });
 });
 

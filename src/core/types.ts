@@ -8,13 +8,6 @@ export interface Tank {
   number: number;
 }
 
-/** A spawn not yet released onto the board, scheduled for a fixed clock time. */
-export interface PendingSpawn {
-  at: number;
-  lane: number;
-  number: number;
-}
-
 /** Pure arithmetic — `a op b`. Knows nothing about tanks. */
 export interface Problem {
   a: number;
@@ -39,7 +32,12 @@ export type Drone =
 export interface GameState {
   time: number;
   tanks: Tank[];
-  pending: PendingSpawn[];
+  /**
+   * The wave's not-yet-released tank numbers, in release order — increment 4c's lane refill: the
+   * lane a tank just left (killed or breached) takes `pending[0]` next. No longer carries a lane
+   * or a scheduled time; which lane refills is decided in `step`, by which lane emptied.
+   */
+  pending: number[];
   nextId: number;
   problem: LiveProblem | null;
   drone: Drone | null;
@@ -66,7 +64,13 @@ export interface GameState {
 export interface Config {
   readonly lanes: number;
   readonly laneTraverseSeconds: number;
-  readonly spawnIntervalSeconds: number;
+  /**
+   * The opening board's stagger, in core's unitless `x` — increment 4c: the tank at position `i`
+   * of a shuffled lane order starts at `x = (i + 0.5) × openingStagger`, so the lanes open at
+   * visibly different depths instead of all arriving together. A field, not a constant, so a
+   * later increment can tune it.
+   */
+  readonly openingStagger: number;
   /** DESIGN.md §7's N: the whole run is this many tanks, fixed at the start — not an endless feed. */
   readonly waveSize: number;
   /** DESIGN.md §7's M: a drone lands back in the pool every this many correct answers. */
@@ -94,10 +98,13 @@ export interface Config {
 
 export const defaultConfig: Config = {
   lanes: 4,
-  // 34 s / 6 s (PLAN.md, decided 2026-10-03): the placeholder 20 s / 2.5 s crowded the board
-  // faster than a realistic answer time could clear it, losing most runs by the tenth tank.
+  // 34 s (PLAN.md, decided 2026-10-03): the placeholder 20 s crowded the board faster than a
+  // realistic answer time could clear it, losing most runs by the tenth tank.
   laneTraverseSeconds: 34,
-  spawnIntervalSeconds: 6,
+  // 0.05 (specs/04c-lane-refill.md, decided with the author): the opening tanks land at 0.025 /
+  // 0.075 / 0.125 / 0.175 of the lane at 4 lanes — all in the left fifth, so the first breach is
+  // ~28 s away rather than ~22 s, yet still ~1.7 s apart at the wall rather than all at once.
+  openingStagger: 0.05,
   // N = 13, M = 4 (specs/04b-drones-wave-winning.md, decided with the author): budget
   // floor((N-1)/M) = 3 wrong answers, run ~78 s, inside DESIGN.md §2's 60-90 s.
   waveSize: 13,

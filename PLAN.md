@@ -1,18 +1,20 @@
 # Build Plan
 
-**Status: increment 4b complete. Next: increment 4c — one tank per lane, lane refill.**
+**Status: increment 4c complete. Next: increment 4d — end-of-run summary.**
 
-Decided by the author in 4b's play session (2026-10-09), for 4c and 4d:
+- **4c landed (specs/04c-lane-refill.md):** one tank per lane, refilled in the same lane on a kill
+  or a breach; the fixed spawn schedule, `spawnIntervalSeconds` and 4b's floor are gone, and
+  DESIGN §6 now describes lane refill. **`openingStagger` ships at 0.05**, revised from the
+  spec's 0.1 after review, with the author: 0.1 put the first breach at ~22 s (~5.5 s per answer
+  from the start, at the edge of the assumed `t_answer`); 0.05 gives ~28 s and keeps ~1.7 s
+  between arrivals; 0.01 was rejected (~0.3 s apart is §6's "all critical at once"). **Carried to
+  increment 9:** nothing guards `openingStagger` — `(lanes − 0.5) × openingStagger ≥ 1` would
+  open a tank at or past the wall, costing a heart before the first tap. Add a throw naming the
+  dial when 9 starts sweeping it. **Carried to 6:** two lanes emptied in one step refill side by
+  side and reach the wall together.
 
-- **4c — one tank per lane, lane refill.** A run starts with one tank in every lane, at staggered
-  depths (proposed ~0.05 / 0.15 / 0.25 / 0.35 of the lane, random lane order) so they do not reach
-  the wall together — four tanks critical at once is exactly what §6 forbids. Whenever a tank
-  leaves the board — **killed or breached** — a new tank enters that same lane at once, until the
-  wave runs out. Reason: with 4b's floor a fast player often faces a single tank, and one tank is
-  an obvious answer. This retires the fixed spawn schedule, `spawnIntervalSeconds` and 4b's floor,
-  and rewrites DESIGN §6's floor paragraph. Tank numbers: every tank of a wave distinct (13 of 21
-  fit), drawn up front, so `step` stays rng-free. Also a **"Tanks left"** counter by the problem
-  (`tanks + pending`).
+Decided by the author in 4b's play session (2026-10-09), for 4d:
+
 - **4d — end-of-run summary.** The win/lose screen shows tanks destroyed, **wrong answers** (the
   author's meaning of "missed"), and the list of wrongly answered problems (e.g. "8 + 7 = 15 —
   you chose 14"), kept in memory only. Core records each wrong answer — a first slice of
@@ -22,9 +24,8 @@ Decided by the author in 4b's play session (2026-10-09), for 4c and 4d:
   built-in browser, not the game.** It did not repaint a lone moving tank until a new node was
   added; the same build plays correctly in Vivaldi and in headless Edge (DOM sampled every second,
   screenshots at three window sizes). **Play-test in a real browser, never VS Code's preview.**
-  Separately and real: a tank releases fully off-screen (`x = 0` puts its centre half a tank left
-  of the edge), so its number needs ~1.1 s to appear at a 34 s traverse — worth a look in 4c,
-  whose refills still enter at `x = 0`.
+  Separately and real: a tank released fully off-screen, so its number needed ~1.1 s to appear —
+  **fixed in 4c** in render only: core `x = 0` now puts the tank's tail on the left edge.
 - **Carried from 4a, still open:** the near-wall tap that shows no drone, and the bang at the wall
   on a breach — both increment 10. `Drone.lane` is redundant, kept on purpose (delete it if
   increment 6 or 9 ever has to keep it consistent with the tank).
@@ -88,7 +89,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **4d** | **End-of-run summary.** Win/lose screen: tanks destroyed, wrong answers, and the list of wrongly answered problems (in memory) | vertical | After a run you can read back every problem you got wrong |
 | | *— end of Milestone 1: a complete, ugly, winnable game —* | | |
 | **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `t_answer / traverse_time`, never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
-| **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces the fixed list | core | Setting `t_answer` absurdly high makes the assertion fire |
+| **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces 4c's lane refill | core | Setting `t_answer` absurdly high makes the assertion fire |
 | **7** | **Distractor strategies.** Adjacent times-table fact, off-by-one/carry, operand confusion, digit reversal — named, per-tier | core | A test per strategy; age-7 tier yields well-separated distractors |
 | **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor, elapsed time | core | A run dumps records; nothing consumes them yet |
 | **9** | **Simulation harness.** Headless; player modelled as `(t_answer, accuracy)`; 1000 runs per preset; report run length, win rate, breach rate, "no safe answer available" count. **Then tune.** | core | Win rates per preset; DESIGN.md §17a.1 and §17a.2 closed |
@@ -110,14 +111,15 @@ measured values.
 |---|---|---|
 | Lanes | 4 | §3 (3–6; responsive later) |
 | Lane traverse time | 34 s | slow tier per §12 — **was 20 s; see the note below** |
-| Spawn interval | 6 s | **decided 2026-10-03**; see the note below |
+| ~~Spawn interval~~ | ~~6 s~~ | **retired in 4c** — lane refill feeds the board; see the note below |
+| Opening stagger | 0.05 | 4c — opening tanks at 0.025 / 0.075 / 0.125 / 0.175 of the lane |
 | `t_answer` assumption | 5 s | §17a.1 placeholder — to be measured, not trusted |
 | **Critical urgency threshold** | **~0.85** | *derived*: `1 − t_answer / traverse` = 1 − 5/34 (§6.1) |
 | Alert threshold | 0.5 | §5 placeholder |
 | Drone flight time | ~0.4 s | §4 — drama dial, not fairness |
 | Hearts | 3 | §7 |
 | Drones | start N, +1 per M=4 correct | §7 — **M = 4 decided 2026-10-09** |
-| Wave size N | 13 | §7 — `floor((N−1)/M)` = a 3-mistake error budget; ~78 s at 6 s/tank |
+| Wave size N | 13 | §7 — `floor((N−1)/M)` = a 3-mistake error budget; ~65 s at a 5 s answer (4c) |
 | Problems | add/sub within 20, carrying and borrowing allowed | §2 default preset |
 | Distractors | well-separated, not near-misses | §9, for age 7 |
 
@@ -141,8 +143,14 @@ because they trade off against each other:
 - **Run length** lands at 13 × 6 ≈ 78 s, inside §2's 60–90 s.
 
 Both are still placeholders built on an *assumed* 5 s `t_answer`. The measurement that replaces
-them comes from the session after increment 5, and increment 6 retires the fixed interval
-altogether for §6's state-dependent governor.
+them comes from the session after increment 5.
+
+**Increment 4c retired the spawn interval** (earlier than the increment-6 retirement this note
+originally planned). With one tank per lane, refilled on every kill or breach, board crowding is
+simply the lane count (4), and run length is set by the player's own pace — 13 answers at ~5 s
+≈ 65 s, still inside §2's 60–90 s. The winnability argument above becomes a per-lane one: a
+refill enters at `x = 0` and has the full 34 s traverse, far above `t_answer + flight`. The 34 s
+traverse stays. Increment 6's governor now replaces lane refill, not a fixed interval.
 
 **`allowCarry` ships `true`, reversing this table's original "no borrowing".** `4+3` and `8+7` are
 both "under 20" and wildly different (§10), and the second is the one worth putting in front of a
@@ -151,7 +159,7 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 4b it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
+meaning. As of increment 4c it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
 `waveSize`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
 `droneTraverseSeconds`, `hearts` and `resupplyEvery`.
 

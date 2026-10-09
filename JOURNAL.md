@@ -242,3 +242,16 @@ releasing fully off-screen. Vitest only shows `console.log` from such a probe wi
 was inserted — so each first tank "appeared late, already shifted right". Vivaldi and headless Edge
 (driven over CDP with Node's built-in WebSocket, no new dependency) both drew it correctly. Lesson:
 when play contradicts a headless probe, check the browser before the code.
+
+---
+
+## Increment 4c — one tank per lane, lane refill
+
+**"Every number in the wave is distinct" caps the wave at the answer range.** 13 of 21 fits, but
+`drone.test.ts` ran a 60-tank wave to stress the board; it dropped to 21 (hearts with it). If a
+later preset wants a wave longer than its answer range, distinctness has to go back to "distinct
+among tanks on screen" — with one tank per lane that window is just the lane count.
+
+**The stagger was tuned by arithmetic, not play:** at 0.1 the four opening tanks must be cleared
+in ~22 s (≈5.5 s each, right at the assumed `t_answer`); 0.05 gives ~28 s. Revisit with the
+measured `t_answer` after increment 5.

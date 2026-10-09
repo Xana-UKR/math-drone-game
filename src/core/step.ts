@@ -1,6 +1,6 @@
 import { generateProblem } from './problem';
 import type { Rng } from './rng';
-import type { Config, Drone, GameState, LiveProblem, PendingSpawn, Tank } from './types';
+import type { Config, Drone, GameState, LiveProblem, Tank } from './types';
 
 /**
  * Both the drone's and a tank's `x` accumulate by repeatedly adding or subtracting a fraction of
@@ -17,66 +17,89 @@ import type { Config, Drone, GameState, LiveProblem, PendingSpawn, Tank } from '
 const ARRIVAL_EPSILON = 1e-9;
 
 /**
- * Builds the entire fixed spawn list up front — the only place randomness is consumed by spawn
- * scheduling. `step` itself is pure and reads no rng.
+ * Builds the whole wave and the opening board up front — the only place randomness is consumed
+ * for either. `step` itself is pure and reads no rng.
  *
  * A tank's number is the answer it will eventually be asked for (DESIGN.md §9), so no two tanks
- * that can be on screen at the same time may show the same number. Each spawn's number is
- * therefore drawn from the answer range with the numbers of every spawn still on screen excluded.
- * Drawing an index into the list of numbers still allowed (one `rng.int` call) keeps this
- * deterministic, instead of re-rolling until a collision-free number turns up.
+ * of the same wave may ever show the same number — increment 4c's lane refill means any tank of
+ * the wave can in principle end up on screen with any other, not merely the ones a fixed schedule
+ * used to overlap. Every one of `config.waveSize` numbers is therefore drawn distinct, up front,
+ * from the answer range with every number already drawn excluded. Drawing an index into the list
+ * of numbers still allowed (one `rng.int` call) keeps this deterministic, instead of re-rolling
+ * until a collision-free number turns up. Checked before a single number is drawn — naming both
+ * `waveSize` and the answer range — when the range cannot hold that many distinct numbers; the
+ * raw `rng.int(0, 0)` error the first draw would otherwise hit says nothing about why.
  *
- * `config.waveSize` (DESIGN.md §7's N) is the whole run: exactly that many spawns, no more ever
- * queued. `drones` starts at the same N — the pool and the wave share one number by construction,
+ * The lane each opening tank occupies is then decided by a Fisher–Yates shuffle of the lanes, on
+ * the same rng stream. The first `min(config.lanes, config.waveSize)` numbers drawn open on the
+ * board, one per lane, at the position its lane landed in the shuffle: position `i` sits at
+ * `x = (i + 0.5) × config.openingStagger`, so the opening board shows tanks at visibly different
+ * depths instead of a wall of them arriving together. Ids go front-most first — the deepest
+ * opening tank (largest `x`, the last position) gets id 1, rising away from the wall — so the
+ * placeholder target (lowest id, increment 2) is still the tank nearest the wall, as it always
+ * was. Every remaining number queues in `pending`, in the order it was drawn — the order lane
+ * refill (`step`) releases them in.
+ *
+ * `config.waveSize` (DESIGN.md §7's N) is the whole run: exactly that many tanks, no more ever
+ * drawn. `drones` starts at the same N — the pool and the wave share one number by construction,
  * not by a second field that could drift from it — and `correct` starts at zero.
  */
 export function createGameState(config: Config, rng: Rng): GameState {
-  const pending: PendingSpawn[] = [];
+  const rangeSize = config.answerMax - config.answerMin + 1;
+  if (rangeSize < config.waveSize) {
+    throw new Error(
+      `createGameState: the answer range [${config.answerMin}, ${config.answerMax}] holds only ` +
+        `${rangeSize} number(s), too few for a waveSize of ${config.waveSize} distinct tanks`,
+    );
+  }
 
-  // Spawn `i + k` overlaps spawn `i` while `k * spawnIntervalSeconds` is less than the time spawn
-  // `i` spends on the board. That time is `laneTraverseSeconds + dt`, not `laneTraverseSeconds`:
-  // a tank is released without moving on its release frame, so it outlives its own traverse time
-  // by one step — on increment 1's 20 s / 2.5 s pair, 9 tanks shared the board for a frame, not
-  // 8. Core does not know `dt` and so cannot size that extra frame. Taking the plain `ceil` of the ratio
-  // covers it at every ratio: it is exact when the ratio sits at or just below an integer — the
-  // cases where that extra frame decides the overlap — and errs by one spare exclusion elsewhere.
-  const overlapCount = Math.max(
-    0,
-    Math.ceil(config.laneTraverseSeconds / config.spawnIntervalSeconds),
-  );
-  const onScreen: number[] = [];
-
+  const numbers: number[] = [];
+  const drawn = new Set<number>();
   for (let i = 0; i < config.waveSize; i += 1) {
-    const lane = rng.int(0, config.lanes);
-
-    const taken = new Set(onScreen);
     const allowed: number[] = [];
     for (let n = config.answerMin; n <= config.answerMax; n += 1) {
-      if (!taken.has(n)) allowed.push(n);
+      if (!drawn.has(n)) allowed.push(n);
     }
 
-    // Tested before the draw rather than after it: `rng.int(0, 0)` would throw its own opaque
-    // range error first, hiding the one thing the caller needs to know.
-    const number = allowed.length === 0 ? undefined : allowed[rng.int(0, allowed.length)];
-    if (number === undefined) {
-      throw new Error(
-        `createGameState: the answer range [${config.answerMin}, ${config.answerMax}] is too ` +
-          `small to keep ${overlapCount + 1} tanks on screen distinct — spawn ${i} has no ` +
-          'number left',
-      );
+    const number = allowed[rng.int(0, allowed.length)];
+    // Unreachable given the range check above: `allowed.length` is `rangeSize - i`, at least
+    // `config.waveSize - i`, which is positive for every i below config.waveSize.
+    if (number === undefined) throw new Error('createGameState: no number left to draw');
+
+    drawn.add(number);
+    numbers.push(number);
+  }
+
+  const laneOrder: number[] = Array.from({ length: config.lanes }, (_, lane) => lane);
+  for (let i = laneOrder.length - 1; i > 0; i -= 1) {
+    const j = rng.int(0, i + 1);
+    const atI = laneOrder[i];
+    const atJ = laneOrder[j];
+    // Unreachable: i and j are always valid indices into laneOrder, whose length never changes.
+    if (atI === undefined || atJ === undefined) {
+      throw new Error('createGameState: internal error shuffling lanes');
     }
+    laneOrder[i] = atJ;
+    laneOrder[j] = atI;
+  }
 
-    pending.push({ at: i * config.spawnIntervalSeconds, lane, number });
-
-    onScreen.push(number);
-    if (onScreen.length > overlapCount) onScreen.shift();
+  const boardCount = Math.min(config.lanes, config.waveSize);
+  const tanks: Tank[] = [];
+  for (let i = 0; i < boardCount; i += 1) {
+    const lane = laneOrder[i];
+    const number = numbers[i];
+    // Unreachable: i ranges over [0, boardCount) and both arrays are at least that long.
+    if (lane === undefined || number === undefined) {
+      throw new Error('createGameState: internal error placing the opening board');
+    }
+    tanks.push({ id: boardCount - i, lane, x: (i + 0.5) * config.openingStagger, number });
   }
 
   return {
     time: 0,
-    tanks: [],
-    pending,
-    nextId: 1,
+    tanks,
+    pending: numbers.slice(boardCount),
+    nextId: boardCount + 1,
     problem: null,
     drone: null,
     hearts: config.hearts,
@@ -114,18 +137,18 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * refusing every tap, soft-locking the game. (Increment 6 turns the §6 invariant into a real
  * dev-build assertion.) A `miss` drone is simply removed once its new `x` reaches 0.
  *
- * Releases every pending spawn whose time has come, moves each surviving tank right by
- * `dt / laneTraverseSeconds`, and retires any tank that reached the wall — using the same
- * `ARRIVAL_EPSILON` tolerance as the drone, so a tank breaches on its nominal step rather than
- * surviving one step too long on the traverse times PLAN.md measured drifting the other way
- * (see `ARRIVAL_EPSILON`'s comment). Each tank retired this way, as opposed to one the drone
- * already removed above, costs one heart (DESIGN.md §4.6–7); hearts clamp at zero even when more
- * tanks breach in the same step than hearts remain, and reaching zero sets `outcome: 'lost'` in
- * this same step. Also clears `state.problem` when its target tank is no longer on the board —
- * DESIGN.md §5: the answer re-rolls the moment its tank is gone, and never changes otherwise. That
- * one clause also covers a drone's impact for free, since the target is already gone from `tanks`
- * by the time it runs. `ensureProblem` is the only function that sets a new problem, so `step`
- * still consumes no randomness. Pure: never mutates `state`, its tanks, or its drone.
+ * Moves each surviving tank right by `dt / laneTraverseSeconds`, and retires any tank that reached
+ * the wall — using the same `ARRIVAL_EPSILON` tolerance as the drone, so a tank breaches on its
+ * nominal step rather than surviving one step too long on the traverse times PLAN.md measured
+ * drifting the other way (see `ARRIVAL_EPSILON`'s comment). Each tank retired this way, as opposed
+ * to one the drone already removed above, costs one heart (DESIGN.md §4.6–7); hearts clamp at zero
+ * even when more tanks breach in the same step than hearts remain, and reaching zero sets
+ * `outcome: 'lost'` in this same step. Also clears `state.problem` when its target tank is no
+ * longer on the board — DESIGN.md §5: the answer re-rolls the moment its tank is gone, and never
+ * changes otherwise. That one clause also covers a drone's impact for free, since the target is
+ * already gone from `tanks` by the time it runs. `ensureProblem` is the only function that sets a
+ * new problem, so `step` still consumes no randomness. Pure: never mutates `state`, its tanks, or
+ * its drone.
  *
  * A hit's impact (above) also counts the answer: `correct + 1`, and — the instant `correct`
  * reaches a multiple of `config.resupplyEvery` — one drone back in the pool (DESIGN.md §7). Both
@@ -133,33 +156,26 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * the hit, and an orphaned hit (its target already gone, handled above) earns neither. A breach
  * earns nothing either — it costs a heart, not a correct answer.
  *
- * **The empty-board floor (DESIGN.md §6).** A wave is fixed-size, so the schedule above, built
- * once in `createGameState` from a fixed interval, can legitimately leave a gap: the player can
- * clear tanks faster than the schedule refills them, especially right after `createGameState`'s
- * collision exclusion forces a slower run of spawns. Left alone that gap would show the player an
- * empty board while tanks they haven't seen yet sit queued seconds away — indistinguishable from
- * the wave having ended early. So: in the step where the board *goes* empty — `state.tanks.length`
- * was positive, no moved tank survived the wall-breach filter above, and nothing was already due
- * this step — the earliest remaining pending spawn (`pending[0]`, the list stays sorted by `at`)
- * is released immediately, at `x = 0`, and every pending spawn shifts earlier by the same amount
- * (`pending[0].at - time`) so the schedule's own spacing survives intact — which is what keeps
- * `createGameState`'s on-screen-number exclusion valid without it having to know this happened.
- * Any other spawn that shared `pending[0]`'s exact `at` is released alongside it, for the same
- * reason two spawns can share a slot in the first place: `createGameState` stacks them deliberately
- * when the interval is tight. Triggered by the board *becoming* empty, not by *being* empty, so a
- * board that starts a step already empty (nothing to clear, hence no "gap" to close) is untouched
- * — that is what keeps `createGameState`'s own empty start, and the ordinary spawn tests built on
- * it, out of this path. Draws no rng: the floor only ever reschedules spawns `createGameState`
- * already drew.
+ * **Lane refill (increment 4c).** `createGameState` no longer schedules spawns against the clock;
+ * every lane holds exactly one tank until the wave runs out. So: every lane that carried a tank at
+ * the *start* of this step but carries none of the survivors above — its tank destroyed by the
+ * drone's impact, or breached at the wall — takes `pending[0]` next, at `x = 0`, a fresh id from
+ * `nextId`. A refilled tank does not move on its own entry step, the same release convention the
+ * fixed schedule used. When several lanes empty in the same step (two breaches, or a kill and a
+ * breach together) they are refilled in ascending lane order, each taking the next number off the
+ * queue — so which lane gets which of the queue's next few numbers is decided by lane number, not
+ * by which one emptied first. Refilling stops the moment `pending` runs dry; a lane can end the
+ * step empty with the wave not yet over, if nothing is left to put in it. Draws no rng: refill only
+ * ever hands out numbers `createGameState` already drew.
  *
- * **Winning.** Checked after the floor has had its chance to refill the board, so a wave that
- * still has tanks queued is never mistaken for one that is over. `outcome` becomes `'won'` the
- * step the board and the pending list are *both* empty — the wave fully resolved, by drone or by
- * breach — provided hearts are still above zero; **loss is checked first**, so the tank that spends
- * the last heart wins nothing even if it was also the wave's last tank. A board that was already
- * empty before this step (nothing to resolve) cannot win here either, by the same "goes, not is"
- * reasoning as the floor above — DESIGN.md §7 makes winning the wave's own event, not a fact about
- * standing still on an empty one.
+ * **Winning.** Checked after refill has had its chance to fill the board, so a wave that still has
+ * tanks queued is never mistaken for one that is over. `outcome` becomes `'won'` the step the board
+ * and the pending list are *both* empty — the wave fully resolved, by drone or by breach — provided
+ * hearts are still above zero; **loss is checked first**, so the tank that spends the last heart
+ * wins nothing even if it was also the wave's last tank. A board that was already empty before this
+ * step (nothing to resolve) cannot win here either, by the same "goes, not is" reasoning as refill
+ * above — DESIGN.md §7 makes winning the wave's own event, not a fact about standing still on an
+ * empty one.
  *
  * Once a run is lost or won, `step` returns `state` itself — same reference, no rng drawn — so the
  * board freezes exactly as it stood at the moment the run ended — the remaining tanks, the problem
@@ -200,13 +216,6 @@ export function step(state: GameState, dt: number, config: Config): GameState {
     }
   }
 
-  let pending: PendingSpawn[] = [];
-  const due: PendingSpawn[] = [];
-  for (const spawn of state.pending) {
-    if (spawn.at <= time) due.push(spawn);
-    else pending.push(spawn);
-  }
-
   const movedTanks = tanks
     .map((tank) => ({ ...tank, x: tank.x + advance }))
     .filter((tank) => tank.x < 1 - ARRIVAL_EPSILON);
@@ -216,28 +225,28 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   const breaches = tanks.length - movedTanks.length;
   const hearts = Math.max(0, state.hearts - breaches);
 
-  // The empty-board floor (DESIGN.md §6) — see the doc comment above. `first` is `pending[0]`:
-  // the earliest spawn left, since `pending` stays sorted by `at` through every step.
-  const floorReleases: PendingSpawn[] = [];
-  const [first] = pending;
-  if (state.tanks.length > 0 && movedTanks.length === 0 && due.length === 0 && first !== undefined) {
-    const shift = first.at - time;
-    const stillPending: PendingSpawn[] = [];
-    for (const spawn of pending) {
-      if (spawn.at === first.at) floorReleases.push(spawn);
-      else stillPending.push({ ...spawn, at: spawn.at - shift });
-    }
-    pending = stillPending;
+  // Lane refill (see the doc comment above). A lane started this step with a tank — recorded from
+  // `state.tanks`, before the drone or the breach filter touched anything — and lost it if that
+  // lane has no survivor among `movedTanks`. Ascending lane order, one pending number each, until
+  // the queue runs dry.
+  const startingLanes = new Set(state.tanks.map((tank) => tank.lane));
+  const survivingLanes = new Set(movedTanks.map((tank) => tank.lane));
+  const emptiedLanes = [...startingLanes]
+    .filter((lane) => !survivingLanes.has(lane))
+    .sort((a, b) => a - b);
+
+  let pending = state.pending;
+  let nextId = state.nextId;
+  const refilledTanks: Tank[] = [];
+  for (const lane of emptiedLanes) {
+    const [number] = pending;
+    if (number === undefined) break;
+    pending = pending.slice(1);
+    refilledTanks.push({ id: nextId, lane, x: 0, number });
+    nextId += 1;
   }
 
-  let nextId = state.nextId;
-  const releasedTanks: Tank[] = [...due, ...floorReleases].map((spawn) => {
-    const tank: Tank = { id: nextId, lane: spawn.lane, x: 0, number: spawn.number };
-    nextId += 1;
-    return tank;
-  });
-
-  const nextTanks = [...movedTanks, ...releasedTanks];
+  const nextTanks = [...movedTanks, ...refilledTanks];
 
   const { problem } = state;
   const nextProblem: LiveProblem | null =
