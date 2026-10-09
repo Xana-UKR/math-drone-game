@@ -19,16 +19,17 @@ const config: Config = {
   lanes: 4,
   laneTraverseSeconds: 20,
   spawnIntervalSeconds: 2.5,
-  spawnCount: 60,
+  waveSize: 60,
   droneTraverseSeconds: 0.4,
   answerMin: 0,
   answerMax: 20,
   operandMin: 0,
   operandMax: 20,
   allowCarry: true,
-  // Equal to spawnCount: no run can breach more tanks than it spawns, so none here can end. These
+  // Equal to waveSize: no run here can be lost before its last tank. These
   // tests predate hearts; losing is tested in hearts.test.ts (specs/04a-hearts-and-losing.md).
   hearts: 60,
+  resupplyEvery: 4,
 };
 
 const DT = 1 / 60;
@@ -60,6 +61,8 @@ function boardOf(tanks: Tank[], problem: LiveProblem | null = null): GameState {
     problem,
     drone: null,
     hearts: config.hearts,
+    drones: config.waveSize,
+    correct: 0,
     outcome: 'playing',
   };
 }

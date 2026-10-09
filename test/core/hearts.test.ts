@@ -19,7 +19,7 @@ const config: Config = {
   lanes: 4,
   laneTraverseSeconds: 20,
   spawnIntervalSeconds: 2.5,
-  spawnCount: 20,
+  waveSize: 20,
   droneTraverseSeconds: 0.4,
   answerMin: 0,
   answerMax: 20,
@@ -27,6 +27,7 @@ const config: Config = {
   operandMax: 20,
   allowCarry: true,
   hearts: 3,
+  resupplyEvery: 4,
 };
 
 const DT = 1 / 60;
@@ -50,6 +51,8 @@ function boardOf(
     problem,
     drone: null,
     hearts,
+    drones: config.waveSize,
+    correct: 0,
     outcome: 'playing',
   };
 }
@@ -165,7 +168,10 @@ describe('step — breaches land on their nominal step at every traverse time (P
 
 describe('step — losing', () => {
   it('stays playing while one heart remains', () => {
-    const after = step(boardOf([tankAt(ONE_STEP_FROM_WALL)], 2), DT, config);
+    // The far tank keeps the wave unfinished: with the breaching tank alone on the board and
+    // nothing pending, a breach with a heart left would be a won wave (DESIGN.md §7, increment 4b).
+    const board = boardOf([tankAt(ONE_STEP_FROM_WALL), tankAt(0.3, { id: 2, lane: 1, number: 7 })], 2);
+    const after = step(board, DT, config);
     expect(after.hearts).toBe(1);
     expect(after.outcome).toBe('playing');
   });

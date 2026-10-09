@@ -1,39 +1,38 @@
 # Build Plan
 
-**Status: increment 4a complete. Next: increment 4b — drones, wave and winning.**
+**Status: increment 4b complete. Next: increment 4c — one tank per lane, lane refill.**
 
-Carried into increment 4b:
+Decided by the author in 4b's play session (2026-10-09), for 4c and 4d:
 
-- **Never leave the board empty — DESIGN.md §6's new floor, decided 2026-10-04 in 4a's play
-  session.** When the last tank is gone, release the next spawn at once and pull the rest of the
-  schedule forward by the same amount. At 6 s intervals, clearing the board fast left up to 6 s
-  with nothing to do. 4b rebuilds the spawn list into the wave of N, which is this rule's natural
-  home; it needs core tests (it changes when tanks arrive) and draws no rng.
-- **The pre-hearts test files pin `hearts` to their `spawnCount`** (`step.test.ts` 20,
-  `drone.test.ts` 60) so no run there can end — at 3 hearts two of their assertions fail outright
-  (specs/04a). The drone pool will do the same to those files' long runs: pin the starting pool and
-  resupply so they cannot run dry, and test running dry in 4b's own file.
-- **A near-wall tap shows no drone at all — deliberately left for increment 10's polish pass.**
-  A target in the last ~4% of its lane is destroyed in the same fixed step the drone launches, so
-  `scene.sync` never sees a drone and the tank simply vanishes. That is 0.8 s of a 20 s traverse
-  (~1.4 s of 34 s now), and it is the dramatic save. The robust fix is a minimum flight duration,
-  which §4 calls a drama dial to be tuned by feel — so it waits for art to feel it against.
-  Reordering the tap drain in `main.ts` would buy one drawn frame, but only when the accumulator
-  runs a single step that frame, so it is not a fix.
-- **A bang at the wall when a tank breaches — increment 10.** The breaching tank is destroyed on
-  impact (§4.6, §7), including the one that ends the run, so the frozen loss board does not show
-  what got through. Agreed with the author after 4a's `/code-review`: an explosion effect at the
-  wall shows that moment, in render; core gets no special case.
-- **`Drone.lane` is redundant, kept on purpose.** Core never branches on it and it is always
-  `tanks.find(t => t.id === targetId).lane`, so by CLAUDE.md's own test ("would deleting it change
-  a run's outcome?") it belongs to render. It stays because the approved spec and tests encode it,
-  and removing it would churn both to change nothing. If increment 6's assertions or increment 9's
-  replay ever have to keep it consistent with the tank, delete it then.
+- **4c — one tank per lane, lane refill.** A run starts with one tank in every lane, at staggered
+  depths (proposed ~0.05 / 0.15 / 0.25 / 0.35 of the lane, random lane order) so they do not reach
+  the wall together — four tanks critical at once is exactly what §6 forbids. Whenever a tank
+  leaves the board — **killed or breached** — a new tank enters that same lane at once, until the
+  wave runs out. Reason: with 4b's floor a fast player often faces a single tank, and one tank is
+  an obvious answer. This retires the fixed spawn schedule, `spawnIntervalSeconds` and 4b's floor,
+  and rewrites DESIGN §6's floor paragraph. Tank numbers: every tank of a wave distinct (13 of 21
+  fit), drawn up front, so `step` stays rng-free. Also a **"Tanks left"** counter by the problem
+  (`tanks + pending`).
+- **4d — end-of-run summary.** The win/lose screen shows tanks destroyed, **wrong answers** (the
+  author's meaning of "missed"), and the list of wrongly answered problems (e.g. "8 + 7 = 15 —
+  you chose 14"), kept in memory only. Core records each wrong answer — a first slice of
+  increment 8's outcome log. Saving them and bringing those facts back next game is later: it
+  needs §15 storage and a DESIGN decision on how missed facts return.
+- **Play-session finding, not reproduced headless:** the author saw the field empty "for a long
+  time" and then two tanks at once. A headless player tapping only visible tanks never saw more
+  than 1.13 s without a visible number, and never two arrivals together. That 1.13 s is real: a
+  tank releases fully off-screen (`x = 0` puts its centre half a tank left of the edge) and its
+  number needs ~1.1 s to appear at a 34 s traverse. 4c's starting tanks sit on-screen; refills
+  still enter at `x = 0` — if that reads as empty, start them at the edge. Possibly a stale 4a
+  build in the browser; worth re-checking in 4c's play.
+- **Carried from 4a, still open:** the near-wall tap that shows no drone, and the bang at the wall
+  on a breach — both increment 10. `Drone.lane` is redundant, kept on purpose (delete it if
+  increment 6 or 9 ever has to keep it consistent with the tank).
 
 Still carried, from earlier increments:
 
 - **Hold the target player's first session until increment 5 is in — but do not reorder the ladder.**
-  5 is already the increment after 4b, so this only moves the session, not the work. With increment
+  5 follows 4c and 4d directly, so this only moves the session, not the work. With increment
   2's placeholder targeting the answer is always on the tank nearest the wall (every tank moves at
   one speed and the placeholder picks the oldest), which is learnable: tap the front tank, skip the
   arithmetic. A `t_answer` measured from a session played that way is measured from a child not
@@ -84,7 +83,9 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **2** | **Problem generation.** Add/sub within 20; all §9 generator constraints; seeded; target tank chosen by the caller. Problem drawn on the base | core | Tests green; a problem shows on the wall matching some tank's number |
 | **3** | **Tap to shoot.** Correct → drone flies the lane, tank dies, new problem. Wrong → diagonal drone off-screen, problem unchanged. One drone in flight; no retargeting | vertical | **First playable moment** — playable endlessly, no stakes |
 | **4a** | **Hearts and losing.** Hearts = 3; a breach costs one and destroys the tank; zero hearts ends the run; full-screen tap-to-restart, **each restart drawing a fresh seed** — the played run seeds itself at start, the increment-9 harness injects one, and `core/` never creates its own | vertical | You let tanks through, lose, restart in one tap — and the wave is different each time |
-| **4b** | **Drones, wave and winning.** Pool starts at N; every answer costs one; +1 per M correct; wave of N; win = wave exhausted with hearts remaining; **loss checked first** on simultaneous impact | vertical | You complete a run to a **win**; a test proves the `floor(N/M)` error budget |
+| **4b** | **Drones, wave and winning.** Pool starts at N; every answer costs one; +1 per M correct; wave of N; win = wave exhausted with hearts remaining; **loss checked first** on simultaneous impact | vertical | You complete a run to a **win**; a test proves the `floor((N−1)/M)` error budget |
+| **4c** | **One tank per lane, lane refill.** Start with a staggered tank in every lane; a tank leaving the board (kill or breach) is replaced in its lane at once until the wave runs out; "Tanks left" counter | vertical | The board always holds one tank per lane until the wave's tail; you never face a lone obvious answer mid-wave |
+| **4d** | **End-of-run summary.** Win/lose screen: tanks destroyed, wrong answers, and the list of wrongly answered problems (in memory) | vertical | After a run you can read back every problem you got wrong |
 | | *— end of Milestone 1: a complete, ugly, winnable game —* | | |
 | **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `t_answer / traverse_time`, never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
 | **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces the fixed list | core | Setting `t_answer` absurdly high makes the assertion fire |
@@ -96,7 +97,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 **Effort:** leave at the Claude Code default (`xhigh`) throughout, except increments **6** and **9** —
 set `max` when opening those sessions. Set it at session start, never mid-session (`WORKFLOW.md`).
 
-Increments 1, 3, 4a and 4b are **vertical** slices (core + render). 2 and 5–9 are pure core, added
+Increments 1, 3 and 4a–4d are **vertical** slices (core + render). 2 and 5–9 are pure core, added
 underneath a game that already runs — so nothing is ever un-playable, and the "all the logic first"
 trap is avoided.
 
@@ -115,8 +116,8 @@ measured values.
 | Alert threshold | 0.5 | §5 placeholder |
 | Drone flight time | ~0.4 s | §4 — drama dial, not fairness |
 | Hearts | 3 | §7 |
-| Drones | start N, +1 per M=3 correct | §7 |
-| Wave size N | 12 | §7 — gives a 4-mistake error budget |
+| Drones | start N, +1 per M=4 correct | §7 — **M = 4 decided 2026-10-09** |
+| Wave size N | 13 | §7 — `floor((N−1)/M)` = a 3-mistake error budget; ~78 s at 6 s/tank |
 | Problems | add/sub within 20, carrying and borrowing allowed | §2 default preset |
 | Distractors | well-separated, not near-misses | §9, for age 7 |
 
@@ -137,7 +138,7 @@ because they trade off against each other:
   chooses between. Raising the interval alone drops the board to ~3 tanks, which guts §9's
   distractors — three choices is a coin flip, not arithmetic. So the traverse rises with it:
   34 / 6 ≈ 5.7 tanks on screen, against 8 at the old pair.
-- **Run length** lands at 12 × 6 ≈ 72–80 s, inside §2's 60–90 s.
+- **Run length** lands at 13 × 6 ≈ 78 s, inside §2's 60–90 s.
 
 Both are still placeholders built on an *assumed* 5 s `t_answer`. The measurement that replaces
 them comes from the session after increment 5, and increment 6 retires the fixed interval
@@ -150,9 +151,9 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 4a it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
-`spawnCount`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
-`droneTraverseSeconds` and `hearts`.
+meaning. As of increment 4b it holds `lanes`, `laneTraverseSeconds`, `spawnIntervalSeconds`,
+`waveSize`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
+`droneTraverseSeconds`, `hearts` and `resupplyEvery`.
 
 **`droneTraverseSeconds` is a speed, not a flight duration.** It is the time to cross the full
 board width, wall to far edge, so a near tank dies sooner than a distant one. The table's
@@ -160,11 +161,8 @@ board width, wall to far edge, so a near tank dies sooner than a distant one. Th
 fairness argument is that the gap closes at `v_drone + v_tank`, which a fixed per-shot duration
 does not express.
 
-**`spawnCount` is `60` as of increment 3, not the `20` increment 1 shipped and not the wave size
-N = 12 above.** It is a fixed pre-wave spawn list that claims no wave semantics — hence the name.
-20 was long enough to watch tanks cross, but once tanks die as fast as they are tapped it empties
-the board in under a minute, which is too short to judge anything. Increment 4b introduces the
-real wave of N = 12 and retires it; increment 6's governor retires the fixed list itself.
+**`spawnCount` became `waveSize` in increment 4b** — the fixed 60-tank list is now the real wave
+of N = 13, and the drone pool starts at it.
 
 ## Two disciplines
 

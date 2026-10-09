@@ -211,3 +211,28 @@ wholesale (double quotes, 80 columns); reverted. Format by hand to the existing 
 
 **Still deferred:** the shared centred-rect helper (increment 3's note) — 4a's hearts are `<text>`
 glyphs and its overlay is one full-screen rect, so the third centred rect did not arrive.
+
+---
+
+## Increment 4b — drones, wave and winning
+
+**DESIGN §7's error budget was off by one, caught while writing the spec, not in play.** Working
+the pool through by hand — 12 drones, +1 per 3 hits — showed the resupply from the last hit always
+arrives after the last tank, so the budget is `floor((N−1)/M)`. Then the test-writing pass caught a
+second slip in my own claim: one mistake *over* the budget is not always one tank short — at
+13 / 4 it is two, because the unaffordable shot also forfeits its resupply. Both were found by
+doing the arithmetic, not by trusting the prose. Worth doing for every economy claim.
+
+**Win and floor are both edge-triggered** ("the board *becomes* empty"), not level-triggered. That
+is how §6 and §7 word them, and it is also what kept the 4a-era tests valid: a board that *starts*
+empty (spawn tests, `boardOf([])`) neither wins nor pulls the schedule forward.
+
+**Floor implementation note (implementer):** the due set is picked by equality with
+`pending[0].at` *before* shifting, not by re-comparing shifted times against the clock —
+`a − (a − t)` is not always bit-exact `t`, so a re-comparison could miss the release by 1e-15.
+
+**Headless probe beats arguing about what the player saw.** The author reported long empty
+stretches; a 30-line throwaway vitest file (deleted, never committed) measured the longest
+no-visible-number gap at 1.13 s across seeds and answer speeds, and pinned the cause to tanks
+releasing fully off-screen. Vitest only shows `console.log` from such a probe with
+`--reporter=verbose`.

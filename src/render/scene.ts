@@ -27,6 +27,12 @@ const HEART_COLOR_SPENT = '#9aa4ae';
 const HEART_SPACING = 48;
 const HEART_FONT_SIZE = 36;
 
+/** The drone/destroyed counters sit below the problem, each other's own row. */
+const COUNTER_FONT_SIZE = 28;
+const COUNTER_COLOR = '#0b0f14';
+/** Same grey as a spent heart — a refused tap reads as "I'm out", not as a bug. */
+const COUNTER_COLOR_EMPTY = HEART_COLOR_SPENT;
+
 /**
  * Wall clock, not the fixed timestep: this is input debounce on a decorative overlay, not
  * gameplay, and CLAUDE.md's motion rule doesn't reach it. A child mid-tap on a tank when the last
@@ -45,10 +51,11 @@ export interface Scene {
  * a panel down the right edge whose left face is the wall every lane terminates on. Widening
  * CONSOLE_WIDTH therefore also shortens `travel`, the pixels a tank covers in
  * `laneTraverseSeconds`. The console also carries one heart glyph per `config.hearts`, above the
- * problem text.
+ * problem text, and two counters below it: drones left and tanks destroyed (DESIGN.md §7).
  * `sync(state)` then creates, moves and removes one `<g>` per tank, keyed by id, and one `<g>` for
- * the drone, in a layer above the tanks; recolours the hearts from `state.hearts`; and shows or
- * hides a full-screen "lost" overlay, appended last so it sits above the drone layer too.
+ * the drone, in a layer above the tanks; recolours the hearts from `state.hearts`; updates the two
+ * counters from `state.drones` and `state.correct`, greying the drone count at zero; and shows or
+ * hides a full-screen end-of-run overlay, appended last so it sits above the drone layer too.
  * `onSelectTank` is wired to a `click` listener on each tank node as it is created (DESIGN.md §17:
  * tap targeting needs no hit-testing code this way) — render only reports the tap; core decides
  * what it means. `onRestart` is wired the same way to the overlay, debounced for
@@ -117,6 +124,28 @@ export function createScene(
     heartNodes.push(heart);
   }
 
+  // Two counters below the problem — drones left and tanks destroyed (DESIGN.md §7) — each its
+  // own row, with enough gap from problemText's own font-size (40, centred on the same y) that
+  // neither ever overlaps it.
+  const dronesText = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+  dronesText.setAttribute('x', String(consoleCenterX));
+  dronesText.setAttribute('y', String(VIEWBOX_HEIGHT / 2 + 90));
+  dronesText.setAttribute('text-anchor', 'middle');
+  dronesText.setAttribute('dominant-baseline', 'central');
+  dronesText.setAttribute('font-size', String(COUNTER_FONT_SIZE));
+  dronesText.setAttribute('font-family', 'system-ui, sans-serif');
+  svg.appendChild(dronesText);
+
+  const destroyedText = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+  destroyedText.setAttribute('x', String(consoleCenterX));
+  destroyedText.setAttribute('y', String(VIEWBOX_HEIGHT / 2 + 90 + HEART_FONT_SIZE));
+  destroyedText.setAttribute('text-anchor', 'middle');
+  destroyedText.setAttribute('dominant-baseline', 'central');
+  destroyedText.setAttribute('font-size', String(COUNTER_FONT_SIZE));
+  destroyedText.setAttribute('font-family', 'system-ui, sans-serif');
+  destroyedText.setAttribute('fill', COUNTER_COLOR);
+  svg.appendChild(destroyedText);
+
   const tankLayer = document.createElementNS(SVG_NS, 'g');
   svg.appendChild(tankLayer);
 
@@ -125,7 +154,7 @@ export function createScene(
   svg.appendChild(droneLayer);
 
   // Appended last of all, so paint order puts it above the drone layer too. Hidden by default —
-  // `sync` reveals it only once `state.outcome === 'lost'`.
+  // `sync` reveals it for any `state.outcome` other than `'playing'` — `'lost'` or `'won'` alike.
   const overlay = document.createElementNS(SVG_NS, 'g');
   overlay.setAttribute('display', 'none');
   overlay.setAttribute('cursor', 'pointer');
@@ -148,14 +177,13 @@ export function createScene(
   overlayText.setAttribute('font-size', '72');
   overlayText.setAttribute('font-family', 'system-ui, sans-serif');
   overlayText.setAttribute('font-weight', 'bold');
-  overlayText.textContent = 'Tap to play again';
   overlay.appendChild(overlayText);
 
   svg.appendChild(overlay);
 
   // `null` until the overlay has shown at least once; `sync` sets it the step `state.outcome`
-  // first reads `'lost'`, and the click listener below refuses to act until
-  // RESTART_DEBOUNCE_SECONDS has passed since then.
+  // first reads something other than `'playing'`, and the click listener below refuses to act
+  // until RESTART_DEBOUNCE_SECONDS has passed since then.
   let shownAt: number | null = null;
   overlay.addEventListener('click', () => {
     if (shownAt !== null && performance.now() - shownAt >= RESTART_DEBOUNCE_SECONDS * 1000) {
@@ -219,7 +247,7 @@ export function createScene(
 
   let droneNode: SVGElement | null = null;
   /** Whether the overlay was shown as of the previous `sync` — the edge `shownAt` is set on. */
-  let wasLost = false;
+  let wasEnded = false;
 
   function sync(state: GameState): void {
     const { problem } = state;
@@ -231,10 +259,16 @@ export function createScene(
       heart.setAttribute('fill', i < state.hearts ? HEART_COLOR_REMAINING : HEART_COLOR_SPENT);
     }
 
-    const isLost = state.outcome === 'lost';
-    overlay.setAttribute('display', isLost ? 'inline' : 'none');
-    if (isLost && !wasLost) shownAt = performance.now();
-    wasLost = isLost;
+    dronesText.textContent = `Drones ${state.drones}`;
+    dronesText.setAttribute('fill', state.drones === 0 ? COUNTER_COLOR_EMPTY : COUNTER_COLOR);
+    destroyedText.textContent = `Destroyed ${state.correct}`;
+
+    const isEnded = state.outcome !== 'playing';
+    overlay.setAttribute('display', isEnded ? 'inline' : 'none');
+    if (isEnded && !wasEnded) shownAt = performance.now();
+    wasEnded = isEnded;
+    overlayText.textContent =
+      state.outcome === 'won' ? 'You won! Tap to play again' : 'Tap to play again';
 
     const seen = new Set<number>();
 

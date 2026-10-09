@@ -25,6 +25,10 @@ const ARRIVAL_EPSILON = 1e-9;
  * therefore drawn from the answer range with the numbers of every spawn still on screen excluded.
  * Drawing an index into the list of numbers still allowed (one `rng.int` call) keeps this
  * deterministic, instead of re-rolling until a collision-free number turns up.
+ *
+ * `config.waveSize` (DESIGN.md §7's N) is the whole run: exactly that many spawns, no more ever
+ * queued. `drones` starts at the same N — the pool and the wave share one number by construction,
+ * not by a second field that could drift from it — and `correct` starts at zero.
  */
 export function createGameState(config: Config, rng: Rng): GameState {
   const pending: PendingSpawn[] = [];
@@ -42,7 +46,7 @@ export function createGameState(config: Config, rng: Rng): GameState {
   );
   const onScreen: number[] = [];
 
-  for (let i = 0; i < config.spawnCount; i += 1) {
+  for (let i = 0; i < config.waveSize; i += 1) {
     const lane = rng.int(0, config.lanes);
 
     const taken = new Set(onScreen);
@@ -76,6 +80,8 @@ export function createGameState(config: Config, rng: Rng): GameState {
     problem: null,
     drone: null,
     hearts: config.hearts,
+    drones: config.waveSize,
+    correct: 0,
     outcome: 'playing',
   };
 }
@@ -121,12 +127,46 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * by the time it runs. `ensureProblem` is the only function that sets a new problem, so `step`
  * still consumes no randomness. Pure: never mutates `state`, its tanks, or its drone.
  *
- * Once a run is lost, `step` returns `state` itself — same reference, no rng drawn — so the board
- * freezes exactly as it stood at the moment of loss — the remaining tanks, the problem and the
- * spent hearts — and the headless harness gets a run that stops on its own instead of one it must
- * remember to halt. The tank that took the last heart is *not* on it: like every breaching tank it
- * is destroyed on impact (DESIGN.md §4.6, §7). Showing that moment is a render effect at the wall
- * (increment 10), not a special case here.
+ * A hit's impact (above) also counts the answer: `correct + 1`, and — the instant `correct`
+ * reaches a multiple of `config.resupplyEvery` — one drone back in the pool (DESIGN.md §7). Both
+ * are counted on impact, not at the tap: §4.4 orders "destroys the tank, score increases" after
+ * the hit, and an orphaned hit (its target already gone, handled above) earns neither. A breach
+ * earns nothing either — it costs a heart, not a correct answer.
+ *
+ * **The empty-board floor (DESIGN.md §6).** A wave is fixed-size, so the schedule above, built
+ * once in `createGameState` from a fixed interval, can legitimately leave a gap: the player can
+ * clear tanks faster than the schedule refills them, especially right after `createGameState`'s
+ * collision exclusion forces a slower run of spawns. Left alone that gap would show the player an
+ * empty board while tanks they haven't seen yet sit queued seconds away — indistinguishable from
+ * the wave having ended early. So: in the step where the board *goes* empty — `state.tanks.length`
+ * was positive, no moved tank survived the wall-breach filter above, and nothing was already due
+ * this step — the earliest remaining pending spawn (`pending[0]`, the list stays sorted by `at`)
+ * is released immediately, at `x = 0`, and every pending spawn shifts earlier by the same amount
+ * (`pending[0].at - time`) so the schedule's own spacing survives intact — which is what keeps
+ * `createGameState`'s on-screen-number exclusion valid without it having to know this happened.
+ * Any other spawn that shared `pending[0]`'s exact `at` is released alongside it, for the same
+ * reason two spawns can share a slot in the first place: `createGameState` stacks them deliberately
+ * when the interval is tight. Triggered by the board *becoming* empty, not by *being* empty, so a
+ * board that starts a step already empty (nothing to clear, hence no "gap" to close) is untouched
+ * — that is what keeps `createGameState`'s own empty start, and the ordinary spawn tests built on
+ * it, out of this path. Draws no rng: the floor only ever reschedules spawns `createGameState`
+ * already drew.
+ *
+ * **Winning.** Checked after the floor has had its chance to refill the board, so a wave that
+ * still has tanks queued is never mistaken for one that is over. `outcome` becomes `'won'` the
+ * step the board and the pending list are *both* empty — the wave fully resolved, by drone or by
+ * breach — provided hearts are still above zero; **loss is checked first**, so the tank that spends
+ * the last heart wins nothing even if it was also the wave's last tank. A board that was already
+ * empty before this step (nothing to resolve) cannot win here either, by the same "goes, not is"
+ * reasoning as the floor above — DESIGN.md §7 makes winning the wave's own event, not a fact about
+ * standing still on an empty one.
+ *
+ * Once a run is lost or won, `step` returns `state` itself — same reference, no rng drawn — so the
+ * board freezes exactly as it stood at the moment the run ended — the remaining tanks, the problem
+ * and the spent hearts — and the headless harness gets a run that stops on its own instead of one
+ * it must remember to halt. The tank that took the last heart is *not* on it: like every breaching
+ * tank it is destroyed on impact (DESIGN.md §4.6, §7). Showing that moment is a render effect at
+ * the wall (increment 10), not a special case here.
  */
 export function step(state: GameState, dt: number, config: Config): GameState {
   if (state.outcome !== 'playing') return state;
@@ -136,6 +176,8 @@ export function step(state: GameState, dt: number, config: Config): GameState {
 
   let tanks = state.tanks;
   let drone = state.drone;
+  let correct = state.correct;
+  let drones = state.drones;
 
   if (drone !== null) {
     const x = drone.x - dt / config.droneTraverseSeconds;
@@ -150,13 +192,15 @@ export function step(state: GameState, dt: number, config: Config): GameState {
       } else if (x <= target.x + advance + ARRIVAL_EPSILON) {
         tanks = tanks.filter((tank) => tank.id !== targetId);
         drone = null;
+        correct += 1;
+        if (correct % config.resupplyEvery === 0) drones += 1;
       } else {
         drone = { kind: 'hit', x, lane, targetId };
       }
     }
   }
 
-  const pending: PendingSpawn[] = [];
+  let pending: PendingSpawn[] = [];
   const due: PendingSpawn[] = [];
   for (const spawn of state.pending) {
     if (spawn.at <= time) due.push(spawn);
@@ -172,8 +216,22 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   const breaches = tanks.length - movedTanks.length;
   const hearts = Math.max(0, state.hearts - breaches);
 
+  // The empty-board floor (DESIGN.md §6) — see the doc comment above. `first` is `pending[0]`:
+  // the earliest spawn left, since `pending` stays sorted by `at` through every step.
+  const floorReleases: PendingSpawn[] = [];
+  const [first] = pending;
+  if (state.tanks.length > 0 && movedTanks.length === 0 && due.length === 0 && first !== undefined) {
+    const shift = first.at - time;
+    const stillPending: PendingSpawn[] = [];
+    for (const spawn of pending) {
+      if (spawn.at === first.at) floorReleases.push(spawn);
+      else stillPending.push({ ...spawn, at: spawn.at - shift });
+    }
+    pending = stillPending;
+  }
+
   let nextId = state.nextId;
-  const releasedTanks: Tank[] = due.map((spawn) => {
+  const releasedTanks: Tank[] = [...due, ...floorReleases].map((spawn) => {
     const tank: Tank = { id: nextId, lane: spawn.lane, x: 0, number: spawn.number };
     nextId += 1;
     return tank;
@@ -185,6 +243,13 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   const nextProblem: LiveProblem | null =
     problem !== null && !nextTanks.some((tank) => tank.id === problem.targetId) ? null : problem;
 
+  const outcome =
+    hearts <= 0
+      ? 'lost'
+      : state.tanks.length > 0 && nextTanks.length === 0 && pending.length === 0
+        ? 'won'
+        : 'playing';
+
   return {
     time,
     tanks: nextTanks,
@@ -193,21 +258,27 @@ export function step(state: GameState, dt: number, config: Config): GameState {
     problem: nextProblem,
     drone,
     hearts,
-    outcome: hearts <= 0 ? 'lost' : 'playing',
+    drones,
+    correct,
+    outcome,
   };
 }
 
 /**
  * The single entry point for a player decision (DESIGN.md §8: recall mode resolves a typed number
  * to the same tank id this handles). Returns `state` unchanged, and draws no rng, when the run is
- * no longer `'playing'` (a lost run takes no more taps), when a drone is already in flight (§4:
- * one at a time; §16: no retargeting), when no problem is live, or when `tankId` names no tank
- * currently on the board (§8: a number no tank carries is rejected outright).
+ * no longer `'playing'` (a lost or won run takes no more taps), when a drone is already in flight
+ * (§4: one at a time; §16: no retargeting), when no problem is live, when `tankId` names no tank
+ * currently on the board (§8: a number no tank carries is rejected outright), or — DESIGN.md §7 —
+ * when the drone pool is empty: a tap with nothing left to launch is refused exactly like any
+ * other, so running the pool dry reads as "no more taps land", not as a crash.
  *
  * Otherwise launches a drone at `x = 1`, the wall: `hit` in the tapped tank's own lane when it
  * carries the live answer, `miss` (no lane, no target) otherwise. Does **not** destroy the tapped
  * tank and does **not** touch `state.problem` — §4 generates the next problem *on impact*, not at
- * the tap, and a blank console mid-flight would read as a bug. Pure: never mutates `state`.
+ * the tap, and a blank console mid-flight would read as a bug. Every launch, hit or miss alike,
+ * spends one drone from the pool — §7 counts the shot, not the outcome; `step` is what hands one
+ * back on a correct answer. Pure: never mutates `state`.
  */
 export function selectTank(state: GameState, tankId: number): GameState {
   if (state.outcome !== 'playing') return state;
@@ -218,18 +289,20 @@ export function selectTank(state: GameState, tankId: number): GameState {
   const target = state.tanks.find((tank) => tank.id === tankId);
   if (target === undefined) return state;
 
+  if (state.drones <= 0) return state;
+
   const drone: Drone =
     tankId === problem.targetId
       ? { kind: 'hit', x: 1, lane: target.lane, targetId: tankId }
       : { kind: 'miss', x: 1 };
 
-  return { ...state, drone };
+  return { ...state, drone, drones: state.drones - 1 };
 }
 
 /**
  * Sets a new live problem when there is none and tanks exist to ask about. Returns `state`
- * unchanged — and draws no rng — when the run is no longer `'playing'` (a lost run sets no more
- * problems), when a problem is already live (§5: the answer never changes under the player's
+ * unchanged — and draws no rng — when the run is no longer `'playing'` (a lost or won run sets no
+ * more problems), when a problem is already live (§5: the answer never changes under the player's
  * finger), or the board is empty.
  *
  * The target pick here — the earliest-spawned tank still on the board (lowest `id`) — is a

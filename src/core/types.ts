@@ -44,19 +44,33 @@ export interface GameState {
   problem: LiveProblem | null;
   drone: Drone | null;
   hearts: number;
-  /** 4b adds `'won'`. */
-  outcome: 'playing' | 'lost';
+  /**
+   * DESIGN.md §7's drone pool: starts at `config.waveSize`, spends one per tap (`selectTank`), and
+   * gains one back every `config.resupplyEvery` correct answers (`step`, on impact). A refused tap
+   * at zero spends nothing.
+   */
+  drones: number;
+  /**
+   * Correct answers landed — a drone's impact on its own target, not the tap that launched it.
+   * Drives resupply above, and doubles as the run's score (DESIGN.md §7).
+   */
+  correct: number;
+  /** 4b adds `'won'`: the wave exhausted — board and pending both empty — with hearts left. */
+  outcome: 'playing' | 'lost' | 'won';
 }
 
 /**
- * Placeholder tuning values for Milestone 1 (PLAN.md). Only the fields this increment uses —
- * drones and wave size arrive with the increments that need them.
+ * Placeholder tuning values for Milestone 1 (PLAN.md), filled in as the increments that use them
+ * land — `waveSize` and `resupplyEvery` by increment 4b.
  */
 export interface Config {
   readonly lanes: number;
   readonly laneTraverseSeconds: number;
   readonly spawnIntervalSeconds: number;
-  readonly spawnCount: number;
+  /** DESIGN.md §7's N: the whole run is this many tanks, fixed at the start — not an endless feed. */
+  readonly waveSize: number;
+  /** DESIGN.md §7's M: a drone lands back in the pool every this many correct answers. */
+  readonly resupplyEvery: number;
   readonly answerMin: number;
   readonly answerMax: number;
   readonly operandMin: number;
@@ -84,9 +98,10 @@ export const defaultConfig: Config = {
   // faster than a realistic answer time could clear it, losing most runs by the tenth tank.
   laneTraverseSeconds: 34,
   spawnIntervalSeconds: 6,
-  // Tanks now die as fast as they are tapped (increment 3), so 20 emptied the board before the
-  // increment could be judged. Still a placeholder, retired by increment 4b's wave.
-  spawnCount: 60,
+  // N = 13, M = 4 (specs/04b-drones-wave-winning.md, decided with the author): budget
+  // floor((N-1)/M) = 3 wrong answers, run ~78 s, inside DESIGN.md §2's 60-90 s.
+  waveSize: 13,
+  resupplyEvery: 4,
   answerMin: 0,
   answerMax: 20,
   operandMin: 0,

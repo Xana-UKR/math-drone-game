@@ -175,7 +175,9 @@ next spawn is released at once and the rest of the schedule moves forward by the
 Found in play (increment 4a): at a 6 s spawn interval, clearing the board fast left up to 6 s with
 nothing to do — the fastest player was punished with the longest wait. With the floor, clearing
 fast shortens the run instead. It decides when tanks arrive, so it is core, and it draws no rng.
-Lands in increment 4b alongside the wave; increment 6's state-dependent governor must keep it.
+Landed in increment 4b. *Increment 4c replaces it with a lane-refill model, decided by the author
+after 4b's play session — the floor alone still left one tank on the board, which makes the answer
+obvious. That change rewrites this section when its spec is approved.*
 
 ---
 
@@ -191,9 +193,14 @@ Lands in increment 4b alongside the wave; increment 6's state-dependent governor
 A run is a **finite wave of N tanks**. The drone pool starts at N, and every answer — right or
 wrong — costs one drone. Resupply grants +1 drone per M correct answers.
 
-This makes the error budget explicit and self-tuning: winning requires N correct answers, which
-earn `floor(N/M)` resupply drones, so a run tolerates exactly **`floor(N/M)` wrong answers**. At
-N = 12, M = 3 that is four mistakes. N and M are the difficulty dial for the resource economy.
+This makes the error budget explicit and self-tuning: winning requires N correct answers, but the
+resupply earned by the *last* of them arrives after the last tank is gone and can never be spent,
+so only `floor((N−1)/M)` resupply drones are usable and a run tolerates exactly
+**`floor((N−1)/M)` wrong answers**, in any order. At N = 13, M = 4 that is three mistakes. One
+mistake over can cost more than one tank: the shot it makes unaffordable also loses the resupply
+that shot would have earned. N and M are the difficulty dial for the resource economy.
+*(Corrected in increment 4b: this read `floor(N/M)`, which overcounts by one whenever M divides N
+— at the old N = 12, M = 3 it promised four mistakes and allowed three.)*
 
 **Win:** the wave is exhausted — every tank resolved, whether destroyed by a drone or destroyed
 breaching the wall — **and hearts remain**.
