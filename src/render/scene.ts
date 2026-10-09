@@ -41,6 +41,35 @@ const COUNTER_COLOR_EMPTY = HEART_COLOR_SPENT;
  */
 const RESTART_DEBOUNCE_SECONDS = 0.75;
 
+/**
+ * End-of-run overlay layout (increment 4d). All plain white text over the scrim, sized down from
+ * the title to the per-entry list, with generous vertical gaps so nothing it can show ever clips
+ * the viewBox. The worst case is 13 entries — every shot of a `waveSize` 13 wave wrong, the most
+ * DESIGN.md §7's pool allows. A `waveSize` above 14 can exceed 7 rows per column and reach the
+ * footer.
+ */
+const OVERLAY_TEXT_COLOR = '#ffffff';
+const OVERLAY_CENTER_X = VIEWBOX_WIDTH / 2;
+const OVERLAY_TITLE_FONT_SIZE = 64;
+const OVERLAY_TITLE_Y = 110;
+const OVERLAY_COUNT_FONT_SIZE = 30;
+const OVERLAY_DESTROYED_Y = 190;
+const OVERLAY_WRONG_COUNT_Y = 232;
+/**
+ * The wrong-answer list sits between the counts and the footer. One column holds up to
+ * `OVERLAY_LIST_MAX_ROWS_PER_COLUMN` entries; a longer list splits into two side-by-side columns
+ * of (at most) that many rows each, so the vertical space the list occupies never grows past what
+ * one column of that height already reserves — 13, the worst case, fits as 7 and 6.
+ */
+const OVERLAY_LIST_FONT_SIZE = 28;
+const OVERLAY_LIST_TOP_Y = 300;
+const OVERLAY_LIST_ROW_HEIGHT = 50;
+const OVERLAY_LIST_MAX_ROWS_PER_COLUMN = 7;
+const OVERLAY_LIST_COLUMN_LEFT_X = VIEWBOX_WIDTH * 0.27;
+const OVERLAY_LIST_COLUMN_RIGHT_X = VIEWBOX_WIDTH * 0.73;
+const OVERLAY_FOOTER_FONT_SIZE = 44;
+const OVERLAY_FOOTER_Y = 820;
+
 export interface Scene {
   svg: SVGSVGElement;
   sync(state: GameState): void;
@@ -55,7 +84,9 @@ export interface Scene {
  * `sync(state)` then creates, moves and removes one `<g>` per tank, keyed by id, and one `<g>` for
  * the drone, in a layer above the tanks; recolours the hearts from `state.hearts`; updates the two
  * counters from `state.drones` and `state.correct`, greying the drone count at zero; and shows or
- * hides a full-screen end-of-run overlay, appended last so it sits above the drone layer too.
+ * hides a full-screen end-of-run overlay, appended last so it sits above the drone layer too. The
+ * overlay's title, counts and wrong-answer list (increment 4d, DESIGN.md §16) are built once, on
+ * the `playing` → ended edge, not every frame — the run is frozen by then, so they cannot change.
  * `onSelectTank` is wired to a `click` listener on each tank node as it is created (DESIGN.md §17:
  * tap targeting needs no hit-testing code this way) — render only reports the tap; core decides
  * what it means. `onRestart` is wired the same way to the overlay, debounced for
@@ -180,16 +211,78 @@ export function createScene(
   overlayScrim.setAttribute('fill-opacity', '0.7');
   overlay.appendChild(overlayScrim);
 
-  const overlayText = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
-  overlayText.setAttribute('x', String(VIEWBOX_WIDTH / 2));
-  overlayText.setAttribute('y', String(VIEWBOX_HEIGHT / 2));
-  overlayText.setAttribute('text-anchor', 'middle');
-  overlayText.setAttribute('dominant-baseline', 'central');
-  overlayText.setAttribute('fill', '#ffffff');
-  overlayText.setAttribute('font-size', '72');
-  overlayText.setAttribute('font-family', 'system-ui, sans-serif');
-  overlayText.setAttribute('font-weight', 'bold');
-  overlay.appendChild(overlayText);
+  /** A plain, centred overlay text node at a given y — every line below shares this shape. */
+  function createOverlayText(y: number, fontSize: number, bold: boolean): SVGTextElement {
+    const text = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    text.setAttribute('x', String(OVERLAY_CENTER_X));
+    text.setAttribute('y', String(y));
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('dominant-baseline', 'central');
+    text.setAttribute('fill', OVERLAY_TEXT_COLOR);
+    text.setAttribute('font-size', String(fontSize));
+    text.setAttribute('font-family', 'system-ui, sans-serif');
+    if (bold) text.setAttribute('font-weight', 'bold');
+    return text;
+  }
+
+  // "You won!" / "Out of hearts", the two counts, and the footer are fixed single lines, built
+  // once; only their textContent changes. The wrong-answer list's row count (and so its column
+  // layout) varies with the run, so its own nodes are rebuilt from scratch — see `buildOverlayList`.
+  const overlayTitle = createOverlayText(OVERLAY_TITLE_Y, OVERLAY_TITLE_FONT_SIZE, true);
+  overlay.appendChild(overlayTitle);
+  const overlayDestroyed = createOverlayText(OVERLAY_DESTROYED_Y, OVERLAY_COUNT_FONT_SIZE, false);
+  overlay.appendChild(overlayDestroyed);
+  const overlayWrongCount = createOverlayText(OVERLAY_WRONG_COUNT_Y, OVERLAY_COUNT_FONT_SIZE, false);
+  overlay.appendChild(overlayWrongCount);
+
+  const overlayListLayer = document.createElementNS(SVG_NS, 'g');
+  overlay.appendChild(overlayListLayer);
+
+  const overlayFooter = createOverlayText(OVERLAY_FOOTER_Y, OVERLAY_FOOTER_FONT_SIZE, true);
+  overlayFooter.textContent = 'Tap to play again';
+  overlay.appendChild(overlayFooter);
+
+  /**
+   * (Re)builds the wrong-answer list from `wrongAnswers`, keyed by nothing — called only on the
+   * `playing` → ended edge (see `sync`), never per frame, since the list a frozen run ends with
+   * never changes again. One column up to `OVERLAY_LIST_MAX_ROWS_PER_COLUMN` entries; beyond that,
+   * two columns, first filled before the second, each capped at that same row count.
+   */
+  function buildOverlayList(wrongAnswers: GameState['wrongAnswers']): void {
+    while (overlayListLayer.firstChild !== null) overlayListLayer.firstChild.remove();
+
+    if (wrongAnswers.length === 0) {
+      const text = createOverlayText(
+        OVERLAY_LIST_TOP_Y + OVERLAY_LIST_ROW_HEIGHT / 2,
+        OVERLAY_LIST_FONT_SIZE,
+        false,
+      );
+      text.textContent = 'No wrong answers!';
+      overlayListLayer.appendChild(text);
+      return;
+    }
+
+    const columns = wrongAnswers.length > OVERLAY_LIST_MAX_ROWS_PER_COLUMN ? 2 : 1;
+    const rows = Math.ceil(wrongAnswers.length / columns);
+
+    wrongAnswers.forEach(({ problem, chosen }, i) => {
+      const column = Math.floor(i / rows);
+      const row = i % rows;
+      const x =
+        columns === 1
+          ? OVERLAY_CENTER_X
+          : column === 0
+            ? OVERLAY_LIST_COLUMN_LEFT_X
+            : OVERLAY_LIST_COLUMN_RIGHT_X;
+      const y = OVERLAY_LIST_TOP_Y + row * OVERLAY_LIST_ROW_HEIGHT + OVERLAY_LIST_ROW_HEIGHT / 2;
+
+      const text = createOverlayText(y, OVERLAY_LIST_FONT_SIZE, false);
+      text.setAttribute('x', String(x));
+      text.textContent =
+        `${problem.a} ${problem.op} ${problem.b} = ${problem.answer} — you chose ${chosen}`;
+      overlayListLayer.appendChild(text);
+    });
+  }
 
   svg.appendChild(overlay);
 
@@ -282,10 +375,14 @@ export function createScene(
 
     const isEnded = state.outcome !== 'playing';
     overlay.setAttribute('display', isEnded ? 'inline' : 'none');
-    if (isEnded && !wasEnded) shownAt = performance.now();
+    if (isEnded && !wasEnded) {
+      shownAt = performance.now();
+      overlayTitle.textContent = state.outcome === 'won' ? 'You won!' : 'Out of hearts';
+      overlayDestroyed.textContent = `Tanks destroyed: ${state.correct}`;
+      overlayWrongCount.textContent = `Wrong answers: ${state.wrongAnswers.length}`;
+      buildOverlayList(state.wrongAnswers);
+    }
     wasEnded = isEnded;
-    overlayText.textContent =
-      state.outcome === 'won' ? 'You won! Tap to play again' : 'Tap to play again';
 
     const seen = new Set<number>();
 

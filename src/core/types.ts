@@ -20,6 +20,17 @@ export interface Problem {
 export type LiveProblem = Problem & { targetId: number };
 
 /**
+ * One wrong tap, recorded at the moment it commits (`selectTank`, on launching a `miss` drone) —
+ * a first slice of increment 8's outcome log (DESIGN.md §16: "Wrong answers resolving on impact"
+ * is explicitly rejected). `problem` is the plain `Problem` the player was shown, with no
+ * `targetId` — that id names a tank, not a fact worth keeping once the run is over.
+ */
+export interface WrongAnswer {
+  problem: Problem;
+  chosen: number;
+}
+
+/**
  * One drone, in flight or absent — DESIGN.md §4: one at a time, no retargeting. `x` shares the
  * tanks' axis: 1 at the wall it launches from, 0 at the far edge. `hit` flies straight down the
  * target's own lane and carries the id of the tank it will destroy on impact; `miss` carries
@@ -55,6 +66,12 @@ export interface GameState {
   correct: number;
   /** 4b adds `'won'`: the wave exhausted — board and pending both empty — with hearts left. */
   outcome: 'playing' | 'lost' | 'won';
+  /**
+   * Every wrong tap this run, in tap order (DESIGN.md §16, increment 8's outcome log) — the
+   * end-of-run summary's source. `selectTank` appends one entry per wrong tap, not per problem, so
+   * the same problem answered wrongly twice appears twice.
+   */
+  wrongAnswers: WrongAnswer[];
 }
 
 /**

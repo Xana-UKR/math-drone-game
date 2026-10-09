@@ -255,3 +255,15 @@ among tanks on screen" — with one tank per lane that window is just the lane c
 **The stagger was tuned by arithmetic, not play:** at 0.1 the four opening tanks must be cleared
 in ~22 s (≈5.5 s each, right at the assumed `t_answer`); 0.05 gives ~28 s. Revisit with the
 measured `t_answer` after increment 5.
+
+---
+
+## Increment 4d — end-of-run summary
+
+**Wrong answers are recorded at the tap, not the impact** — DESIGN §16 already says a wrong answer
+is committed when chosen, and the miss drone destroys nothing, so impact adds no information.
+Recording in `selectTank` also keeps `step` free of the log.
+
+**One entry per wrong tap, not per problem.** The problem stays live after a miss, so the list can
+show the same problem twice with different choices; that keeps "Wrong answers: N" equal to the
+line count, which a child can check by counting.

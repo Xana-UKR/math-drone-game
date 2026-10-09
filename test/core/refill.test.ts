@@ -49,6 +49,7 @@ function boardOf(tanks: Tank[], overrides: Partial<GameState> = {}): GameState {
     drones: config.waveSize,
     correct: 0,
     outcome: 'playing',
+    wrongAnswers: [],
     ...overrides,
   };
 }

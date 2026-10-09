@@ -1,6 +1,16 @@
 # Build Plan
 
-**Status: increment 4c complete. Next: increment 4d — end-of-run summary.**
+**Status: increment 4d complete — Milestone 1 done. Next: increment 5 — urgency targeting.**
+
+- **4d landed (specs/04d-end-of-run-summary.md):** `GameState.wrongAnswers` records each wrong
+  tap at the `miss` launch (plain problem + chosen number), one entry per tap, so a problem
+  missed twice appears twice. The end overlay shows "You won!" / "Out of hearts", tanks
+  destroyed, wrong answers and the list. **Carried to 8:** `wrongAnswers` is the first slice of
+  the outcome log — extend it, don't build a parallel one. **Carried to 9:** the overlay fits at
+  most 7 rows per column; the list's ceiling is `waveSize + floor(correct/M) − correct` ≤
+  `waveSize`, so a preset with `waveSize > 14` can push the list into the footer. Cap or
+  paginate the list if 9 raises N. Saving missed facts across games still needs §15 storage and
+  a DESIGN decision.
 
 - **4c landed (specs/04c-lane-refill.md):** one tank per lane, refilled in the same lane on a kill
   or a breach; the fixed spawn schedule, `spawnIntervalSeconds` and 4b's floor are gone, and
@@ -13,7 +23,7 @@
   dial when 9 starts sweeping it. **Carried to 6:** two lanes emptied in one step refill side by
   side and reach the wall together.
 
-Decided by the author in 4b's play session (2026-10-09), for 4d:
+Decided by the author in 4b's play session (2026-10-09) — the 4d item below has now landed:
 
 - **4d — end-of-run summary.** The win/lose screen shows tanks destroyed, **wrong answers** (the
   author's meaning of "missed"), and the list of wrongly answered problems (e.g. "8 + 7 = 15 —

@@ -106,6 +106,7 @@ export function createGameState(config: Config, rng: Rng): GameState {
     drones: config.waveSize,
     correct: 0,
     outcome: 'playing',
+    wrongAnswers: [],
   };
 }
 
@@ -270,6 +271,7 @@ export function step(state: GameState, dt: number, config: Config): GameState {
     drones,
     correct,
     outcome,
+    wrongAnswers: state.wrongAnswers,
   };
 }
 
@@ -287,7 +289,13 @@ export function step(state: GameState, dt: number, config: Config): GameState {
  * tank and does **not** touch `state.problem` — §4 generates the next problem *on impact*, not at
  * the tap, and a blank console mid-flight would read as a bug. Every launch, hit or miss alike,
  * spends one drone from the pool — §7 counts the shot, not the outcome; `step` is what hands one
- * back on a correct answer. Pure: never mutates `state`.
+ * back on a correct answer.
+ *
+ * A `miss` launch also appends to `wrongAnswers` (DESIGN.md §16, increment 8's outcome log): the
+ * plain `problem` shown — stripped of `targetId`, which names a tank, not a fact worth keeping —
+ * and `chosen`, the tapped tank's own number. That is the tap where the wrong answer is committed,
+ * not the drone's later impact; a refused tap of any kind records nothing, and neither does a hit.
+ * Pure: never mutates `state` or its `wrongAnswers` array.
  */
 export function selectTank(state: GameState, tankId: number): GameState {
   if (state.outcome !== 'playing') return state;
@@ -300,12 +308,17 @@ export function selectTank(state: GameState, tankId: number): GameState {
 
   if (state.drones <= 0) return state;
 
-  const drone: Drone =
-    tankId === problem.targetId
-      ? { kind: 'hit', x: 1, lane: target.lane, targetId: tankId }
-      : { kind: 'miss', x: 1 };
+  const isHit = tankId === problem.targetId;
+  const drone: Drone = isHit
+    ? { kind: 'hit', x: 1, lane: target.lane, targetId: tankId }
+    : { kind: 'miss', x: 1 };
 
-  return { ...state, drone, drones: state.drones - 1 };
+  const { a, op, b, answer } = problem;
+  const wrongAnswers = isHit
+    ? state.wrongAnswers
+    : [...state.wrongAnswers, { problem: { a, op, b, answer }, chosen: target.number }];
+
+  return { ...state, drone, drones: state.drones - 1, wrongAnswers };
 }
 
 /**
