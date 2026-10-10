@@ -42,11 +42,11 @@ const COUNTER_COLOR_EMPTY = HEART_COLOR_SPENT;
 const RESTART_DEBOUNCE_SECONDS = 0.75;
 
 /**
- * End-of-run overlay layout (increment 4d). All plain white text over the scrim, sized down from
- * the title to the per-entry list, with generous vertical gaps so nothing it can show ever clips
- * the viewBox. The worst case is 13 entries — every shot of a `waveSize` 13 wave wrong, the most
- * DESIGN.md §7's pool allows. A `waveSize` above 14 can exceed 7 rows per column and reach the
- * footer.
+ * End-of-run overlay layout (increment 4d, extended by 5b with the time line). All plain white
+ * text over the scrim, sized down from the title to the per-entry list, with generous vertical
+ * gaps so nothing it can show ever clips the viewBox. The worst case is 13 entries — every shot of
+ * a `waveSize` 13 wave wrong, the most DESIGN.md §7's pool allows. A `waveSize` above 14 can exceed
+ * 7 rows per column and reach the footer.
  */
 const OVERLAY_TEXT_COLOR = '#ffffff';
 const OVERLAY_CENTER_X = VIEWBOX_WIDTH / 2;
@@ -55,14 +55,17 @@ const OVERLAY_TITLE_Y = 110;
 const OVERLAY_COUNT_FONT_SIZE = 30;
 const OVERLAY_DESTROYED_Y = 190;
 const OVERLAY_WRONG_COUNT_Y = 232;
+/** The round-duration line (increment 5b), directly under "Wrong answers" at the same gap (42). */
+const OVERLAY_TIME_Y = OVERLAY_WRONG_COUNT_Y + 42;
 /**
- * The wrong-answer list sits between the counts and the footer. One column holds up to
+ * The wrong-answer list sits between the counts/time and the footer. One column holds up to
  * `OVERLAY_LIST_MAX_ROWS_PER_COLUMN` entries; a longer list splits into two side-by-side columns
  * of (at most) that many rows each, so the vertical space the list occupies never grows past what
- * one column of that height already reserves — 13, the worst case, fits as 7 and 6.
+ * one column of that height already reserves — 13, the worst case, fits as 7 and 6. Pushed down
+ * from 300 by the same 42 the time line added, so it still clears the time line above it.
  */
 const OVERLAY_LIST_FONT_SIZE = 28;
-const OVERLAY_LIST_TOP_Y = 300;
+const OVERLAY_LIST_TOP_Y = 342;
 const OVERLAY_LIST_ROW_HEIGHT = 50;
 const OVERLAY_LIST_MAX_ROWS_PER_COLUMN = 7;
 const OVERLAY_LIST_COLUMN_LEFT_X = VIEWBOX_WIDTH * 0.27;
@@ -85,8 +88,9 @@ export interface Scene {
  * the drone, in a layer above the tanks; recolours the hearts from `state.hearts`; updates the two
  * counters from `state.drones` and `state.correct`, greying the drone count at zero; and shows or
  * hides a full-screen end-of-run overlay, appended last so it sits above the drone layer too. The
- * overlay's title, counts and wrong-answer list (increment 4d, DESIGN.md §16) are built once, on
- * the `playing` → ended edge, not every frame — the run is frozen by then, so they cannot change.
+ * overlay's title, counts, round duration and wrong-answer list (increment 4d/5b, DESIGN.md §16)
+ * are built once, on the `playing` → ended edge, not every frame — the run is frozen by then, so
+ * they cannot change.
  * `onSelectTank` is wired to a `click` listener on each tank node as it is created (DESIGN.md §17:
  * tap targeting needs no hit-testing code this way) — render only reports the tap; core decides
  * what it means. `onRestart` is wired the same way to the overlay, debounced for
@@ -225,15 +229,18 @@ export function createScene(
     return text;
   }
 
-  // "You won!" / "Out of hearts", the two counts, and the footer are fixed single lines, built
-  // once; only their textContent changes. The wrong-answer list's row count (and so its column
-  // layout) varies with the run, so its own nodes are rebuilt from scratch — see `buildOverlayList`.
+  // "You won!" / "Out of hearts", the two counts, the time, and the footer are fixed single
+  // lines, built once; only their textContent changes. The wrong-answer list's row count (and so
+  // its column layout) varies with the run, so its own nodes are rebuilt from scratch — see
+  // `buildOverlayList`.
   const overlayTitle = createOverlayText(OVERLAY_TITLE_Y, OVERLAY_TITLE_FONT_SIZE, true);
   overlay.appendChild(overlayTitle);
   const overlayDestroyed = createOverlayText(OVERLAY_DESTROYED_Y, OVERLAY_COUNT_FONT_SIZE, false);
   overlay.appendChild(overlayDestroyed);
   const overlayWrongCount = createOverlayText(OVERLAY_WRONG_COUNT_Y, OVERLAY_COUNT_FONT_SIZE, false);
   overlay.appendChild(overlayWrongCount);
+  const overlayTime = createOverlayText(OVERLAY_TIME_Y, OVERLAY_COUNT_FONT_SIZE, false);
+  overlay.appendChild(overlayTime);
 
   const overlayListLayer = document.createElementNS(SVG_NS, 'g');
   overlay.appendChild(overlayListLayer);
@@ -380,6 +387,8 @@ export function createScene(
       overlayTitle.textContent = state.outcome === 'won' ? 'You won!' : 'Out of hearts';
       overlayDestroyed.textContent = `Tanks destroyed: ${state.correct}`;
       overlayWrongCount.textContent = `Wrong answers: ${state.wrongAnswers.length}`;
+      const seconds = Math.floor(state.time);
+      overlayTime.textContent = `Time: ${seconds} second${seconds === 1 ? '' : 's'}`;
       buildOverlayList(state.wrongAnswers);
     }
     wasEnded = isEnded;

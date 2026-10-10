@@ -1,6 +1,13 @@
 # Build Plan
 
-**Status: increment 5 complete. Next: the target player's first session (measure `t_answer`), then increment 6 — fairness invariant + spawn governor.**
+**Status: increment 5b complete. Next: increment 6 — fairness invariant + spawn governor (set effort to `max`).**
+
+- **5b landed (specs/05b-round-duration.md):** the end overlay shows `Time: N seconds` under
+  "Wrong answers" — render only, from `state.time` (game time: frozen at the run's end, background
+  tab time excluded by the frame cap). Average answer time was proposed and **dropped by the
+  author**; per-problem timing stays in increment 8.
+- **`t_answer` stays at 5 s for increment 6 — decided by the author 2026-10-10.** `tAnswerSeconds`
+  is unchanged; increment 9 still replaces it with a measured value.
 
 - **5 landed (specs/05-urgency-targeting.md):** `src/core/targeting.ts` — `criticalThreshold`,
   `candidatePool`, `pickTarget`; `ensureProblem` uses them. **The critical threshold was
@@ -111,6 +118,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **4d** | **End-of-run summary.** Win/lose screen: tanks destroyed, wrong answers, and the list of wrongly answered problems (in memory) | vertical | After a run you can read back every problem you got wrong |
 | | *— end of Milestone 1: a complete, ugly, winnable game —* | | |
 | **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `1 − (2·t_answer + flight) / traverse_time` ("must be offered now"), never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
+| **5b** | **Round duration.** End overlay shows `Time: N seconds` (game time), under "Wrong answers" — added at the author's request | vertical | The time on the end screen matches a phone stopwatch, win or lose |
 | **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces 4c's lane refill | core | Setting `t_answer` absurdly high makes the assertion fire |
 | **7** | **Distractor strategies.** Adjacent times-table fact, off-by-one/carry, operand confusion, digit reversal — named, per-tier | core | A test per strategy; age-7 tier yields well-separated distractors |
 | **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor, elapsed time | core | A run dumps records; nothing consumes them yet |
