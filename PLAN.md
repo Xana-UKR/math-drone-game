@@ -18,7 +18,16 @@ first unassisted session can run any time; it is where `t_answer` gets measured.
   clearability check assumes a full 0.4 s flight per answer, so at 8 s the opening holds 3 tanks
   where 4 would have survived in play; the governor still counts the live target during the drone's
   flight (deliberate, ≤ 0.4 s late per refill). **Carried to 9:** count "no savable tank" picks with
-  `isSavable` for the harness's "no safe answer" metric. **Note for the session:** a perfectly
+  `isSavable` for the harness's "no safe answer" metric. **Carried to 9 — how to set the three
+  board dials, decided with the author 2026-10-11:** (1) **lanes** come from screen size and the age
+  preset — they are the number of answers the child chooses between (§9's distractors), not a
+  pressure dial; (2) **traverse time** (tank speed) is *derived* from the measured `t_answer` so that
+  every lane fits with margin — roughly `traverse > lanes·(t_answer + flight)` plus the opening's
+  offset (≈ 40 s for 4 lanes at 9 s), the same way the critical threshold is derived, never typed
+  in; to make a fast player's game harder, speed tanks up rather than add lanes; (3) **wave size**
+  sets run length (≈ `N × t_answer`), so 60–90 s at a slow `t_answer` means a smaller wave (≈ 9–10
+  at 9 s), not faster tanks. Tuned this way the governor should almost never visibly act — an empty
+  lane held back is the safety net showing, not the design. **Note for the session:** a perfectly
   steady player slower than `t_answer` does worse under deadline order (steady 7 s vs the 5 s model:
   47% of runs won, was 60%); realistic noisy players do not (22% vs 19%) — measuring `t_answer` is
   the cure.
