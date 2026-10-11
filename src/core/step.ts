@@ -2,7 +2,7 @@ import { isClearable, liveTarget } from './fairness';
 import { generateProblem } from './problem';
 import type { Rng } from './rng';
 import { candidatePool, pickTarget } from './targeting';
-import type { Config, Drone, GameState, LiveProblem, Tank } from './types';
+import type { Config, Drone, GameState, LiveProblem, Problem, ProblemRecord, Tank } from './types';
 
 /**
  * Both the drone's and a tank's `x` accumulate by repeatedly adding or subtracting a fraction of
@@ -128,6 +128,7 @@ export function createGameState(config: Config, rng: Rng): GameState {
     correct: 0,
     outcome: 'playing',
     wrongAnswers: [],
+    log: [],
   };
 }
 
@@ -206,6 +207,11 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * it must remember to halt. The tank that took the last heart is *not* on it: like every breaching
  * tank it is destroyed on impact (DESIGN.md §4.6, §7). Showing that moment is a render effect at
  * the wall (increment 10), not a special case here.
+ *
+ * **Log (increment 8).** If the last `log` record is open, it closes where the event happens:
+ * `'correct'` at a hit drone's impact on the problem's own tank, `'breached'` where that tank
+ * reaches the wall (even if that took the last heart), `'runEnded'` when the run was lost with the
+ * problem still live. Any other step keeps the same `log` reference.
  */
 export function step(state: GameState, dt: number, config: Config): GameState {
   if (state.outcome !== 'playing') return state;
@@ -217,6 +223,9 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   let drone = state.drone;
   let correct = state.correct;
   let drones = state.drones;
+  /** How the live problem's record closes this step, written where that event happens. */
+  let closedAs: ProblemRecord['result'] | null = null;
+  const { problem } = state;
 
   if (drone !== null) {
     const x = drone.x - dt / config.droneTraverseSeconds;
@@ -231,6 +240,7 @@ export function step(state: GameState, dt: number, config: Config): GameState {
       } else if (x <= target.x + advance + ARRIVAL_EPSILON) {
         tanks = tanks.filter((tank) => tank.id !== targetId);
         drone = null;
+        if (targetId === problem?.targetId) closedAs = 'correct';
         correct += 1;
         if (correct % config.resupplyEvery === 0) drones += 1;
       } else {
@@ -247,6 +257,13 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   // a tank the drone already destroyed never reaches this point, so it costs nothing.
   const breaches = tanks.length - movedTanks.length;
   const hearts = Math.max(0, state.hearts - breaches);
+  if (
+    problem !== null &&
+    tanks.some((tank) => tank.id === problem.targetId) &&
+    !movedTanks.some((tank) => tank.id === problem.targetId)
+  ) {
+    closedAs = 'breached';
+  }
 
   // Spawn governor (see the doc comment above). The live target still counts while a hit drone is
   // flying at it — the answer is already given, so this over-counts by one answer for at most one
@@ -269,7 +286,6 @@ export function step(state: GameState, dt: number, config: Config): GameState {
     nextTanks.push(candidate);
   }
 
-  const { problem } = state;
   const nextProblem: LiveProblem | null =
     problem !== null && !nextTanks.some((tank) => tank.id === problem.targetId) ? null : problem;
 
@@ -279,6 +295,16 @@ export function step(state: GameState, dt: number, config: Config): GameState {
       : state.tanks.length > 0 && nextTanks.length === 0 && pending.length === 0
         ? 'won'
         : 'playing';
+
+  // A run lost with the problem still live ends its record too. The target's own breach that takes
+  // the last heart was already recorded above, so it stays 'breached'.
+  if (closedAs === null && problem !== null && outcome === 'lost') closedAs = 'runEnded';
+
+  let log = state.log;
+  const last = log[log.length - 1];
+  if (closedAs !== null && last !== undefined && last.result === 'open') {
+    log = [...log.slice(0, -1), { ...last, result: closedAs }];
+  }
 
   return {
     time,
@@ -292,6 +318,7 @@ export function step(state: GameState, dt: number, config: Config): GameState {
     correct,
     outcome,
     wrongAnswers: state.wrongAnswers,
+    log,
   };
 }
 
@@ -316,6 +343,10 @@ export function step(state: GameState, dt: number, config: Config): GameState {
  * and `chosen`, the tapped tank's own number. That is the tap where the wrong answer is committed,
  * not the drone's later impact; a refused tap of any kind records nothing, and neither does a hit.
  * Pure: never mutates `state` or its `wrongAnswers` array.
+ *
+ * Every launch also adds a tap to the last `log` record when it is open: `chosen`, the tapped
+ * tank's number, and `seconds` since the problem was shown. With no open record (a hand-built
+ * state) it launches as normal and logs nothing.
  */
 export function selectTank(state: GameState, tankId: number): GameState {
   if (state.outcome !== 'playing') return state;
@@ -333,12 +364,20 @@ export function selectTank(state: GameState, tankId: number): GameState {
     ? { kind: 'hit', x: 1, lane: target.lane, targetId: tankId }
     : { kind: 'miss', x: 1 };
 
-  const { a, op, b, answer } = problem;
   const wrongAnswers = isHit
     ? state.wrongAnswers
-    : [...state.wrongAnswers, { problem: { a, op, b, answer }, chosen: target.number }];
+    : [...state.wrongAnswers, { problem: plainProblem(problem), chosen: target.number }];
 
-  return { ...state, drone, drones: state.drones - 1, wrongAnswers };
+  const last = state.log[state.log.length - 1];
+  const log =
+    last !== undefined && last.result === 'open'
+      ? [
+          ...state.log.slice(0, -1),
+          { ...last, taps: [...last.taps, { chosen: target.number, seconds: state.time - last.shownAt }] },
+        ]
+      : state.log;
+
+  return { ...state, drone, drones: state.drones - 1, wrongAnswers, log };
 }
 
 /**
@@ -352,7 +391,8 @@ export function selectTank(state: GameState, tankId: number): GameState {
  * toward urgency. Both are pure functions of `state.tanks` and `config`; this is the only place
  * that feeds them the live rng stream. The problem is drawn with the other tanks' numbers (the
  * target's own excluded) so that, under `config.mistakeAnswers === 'traps'`, it can invite a
- * mistake already on the board (`generateProblem`).
+ * mistake already on the board (`generateProblem`). Also appends an open `log` record for the new
+ * problem, stamped with `state.time`.
  */
 export function ensureProblem(state: GameState, rng: Rng, config: Config): GameState {
   if (state.outcome !== 'playing') return state;
@@ -362,5 +402,23 @@ export function ensureProblem(state: GameState, rng: Rng, config: Config): GameS
 
   const others = state.tanks.filter((tank) => tank.id !== target.id).map((tank) => tank.number);
   const generated = generateProblem(target.number, rng, config, others);
-  return { ...state, problem: { ...generated, targetId: target.id } };
+  const record: ProblemRecord = {
+    problem: plainProblem(generated),
+    shownAt: state.time,
+    taps: [],
+    result: 'open',
+  };
+  return {
+    ...state,
+    problem: { ...generated, targetId: target.id },
+    log: [...state.log, record],
+  };
+}
+
+/**
+ * The problem as shown, without `targetId` — that names a tank, not a fact worth keeping once the
+ * run is over. The one copy both `wrongAnswers` and `log` take, so the two cannot disagree.
+ */
+function plainProblem({ a, op, b, answer }: Problem): Problem {
+  return { a, op, b, answer };
 }

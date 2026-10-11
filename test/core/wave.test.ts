@@ -54,6 +54,7 @@ function boardOf(
     correct: 0,
     outcome: 'playing',
     wrongAnswers: [],
+    log: [],
     ...overrides,
   };
 }

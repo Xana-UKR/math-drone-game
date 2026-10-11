@@ -1,4 +1,5 @@
 import { unclearableEntries } from '../core/fairness';
+import { runLog } from '../core/outcomes';
 import { createRng } from '../core/rng';
 import { createGameState, ensureProblem, selectTank, step } from '../core/step';
 import type { Config, GameState } from '../core/types';
@@ -36,6 +37,10 @@ const tapQueue: number[] = [];
 let state: GameState;
 let rng: ReturnType<typeof createRng>;
 let scene: Scene;
+/** The current run's seed, kept for the outcome log. */
+let seed: number;
+/** Whether the current run's log has been printed — once per run. */
+let logged = false;
 let accumulator = 0;
 let lastTime: number | null = null;
 /** Dev-build §6 assertion: tanks with an id from here on have not been checked yet. */
@@ -71,8 +76,10 @@ function checkFairness(): void {
  * tank 1's node and its stale number.
  */
 function startRun(): void {
-  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  if (seed === undefined) throw new Error('crypto.getRandomValues produced no seed');
+  const newSeed = crypto.getRandomValues(new Uint32Array(1))[0];
+  if (newSeed === undefined) throw new Error('crypto.getRandomValues produced no seed');
+  seed = newSeed;
+  logged = false;
   console.info(`Math Drone Defense: seed ${seed}`);
 
   rng = createRng(seed);
@@ -130,6 +137,17 @@ function frame(now: number): void {
     // the browser's frame rate and destroy same-seed reproducibility.
     state = ensureProblem(state, rng, config);
     accumulator -= FIXED_DT;
+  }
+
+  // Every build, so a play session can copy the run's log out of the console (DESIGN.md §14).
+  // Fractional numbers (times) are rounded to 2 decimals for reading only; core keeps them exact.
+  if (state.outcome !== 'playing' && !logged) {
+    logged = true;
+    console.info(
+      JSON.stringify(runLog(state, config, seed), (_key, value: unknown) =>
+        typeof value === 'number' && !Number.isInteger(value) ? Math.round(value * 100) / 100 : value,
+      ),
+    );
   }
 
   scene.sync(state);

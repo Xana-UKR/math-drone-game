@@ -46,6 +46,7 @@ function board(overrides: Partial<GameState> = {}): GameState {
     correct: 0,
     outcome: 'playing',
     wrongAnswers: [],
+    log: [],
     ...overrides,
   };
 }

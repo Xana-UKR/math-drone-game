@@ -65,6 +65,7 @@ function boardOf(tanks: Tank[], problem: LiveProblem | null = null): GameState {
     correct: 0,
     outcome: 'playing',
     wrongAnswers: [],
+    log: [],
   };
 }
 

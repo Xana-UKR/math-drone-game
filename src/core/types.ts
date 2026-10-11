@@ -31,6 +31,20 @@ export interface WrongAnswer {
 }
 
 /**
+ * One problem shown, from appearing to resolving (increment 8, DESIGN.md §14). `shownAt` is game
+ * time; each tap's `seconds` counts from it. `'open'` while the problem is live — only the last
+ * record of a log can be — then `'correct'` (its drone hit), `'breached'` (its tank reached the
+ * wall) or `'runEnded'` (the run was lost while it was still live). No distractor kind is stored:
+ * `mistakesFor` computes it later.
+ */
+export interface ProblemRecord {
+  problem: Problem;
+  shownAt: number;
+  taps: { chosen: number; seconds: number }[];
+  result: 'open' | 'correct' | 'breached' | 'runEnded';
+}
+
+/**
  * One drone, in flight or absent — DESIGN.md §4: one at a time, no retargeting. `x` shares the
  * tanks' axis: 1 at the wall it launches from, 0 at the far edge. `hit` flies straight down the
  * target's own lane and carries the id of the tank it will destroy on impact; `miss` carries
@@ -74,6 +88,12 @@ export interface GameState {
    * the same problem answered wrongly twice appears twice.
    */
   wrongAnswers: WrongAnswer[];
+  /**
+   * One record per problem shown, in the order shown (increment 8, DESIGN.md §14). Each event is
+   * written by the function that causes it: `ensureProblem` opens a record, `selectTank` adds a
+   * tap, `step` closes it. Nothing in the game reads it; `runLog` (`outcomes.ts`) wraps it.
+   */
+  log: ProblemRecord[];
 }
 
 /**

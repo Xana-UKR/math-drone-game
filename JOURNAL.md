@@ -326,3 +326,16 @@ must use even numbers — 13 and 17 are also swaps (14 + 1, 16 − 1).
 **Regroup helpers live in `mistakes.ts`** (exported, imported by `problem.ts`) so that "this
 problem regroups" has one definition and the two modules don't import each other.
 
+
+## Increment 8 — outcome logging
+
+**Diffing vs. writing at the event:** the first spec kept the log beside `GameState` and inferred
+events by comparing consecutive states, to avoid touching 8 test files. The author ruled that
+adding `log: []` to state literals changes no assertion, so it is not "modifying a test". The
+review then caught the implementation still inferring `correct`/`breached` from a before/after
+diff inside `step`; it now records each result where the event happens, so a future way of
+clearing a problem leaves the record open (caught by the whole-run "every record closed" test)
+instead of silently logging `breached`.
+
+**Review items dismissed:** O(n) copy of the log per event (13–30 records a run); per-field
+rounding drift of up to 0.01 s in the printed log (core is exact); the `logged` flag in `main.ts`.

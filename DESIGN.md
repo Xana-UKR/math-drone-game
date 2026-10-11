@@ -505,6 +505,22 @@ Log per-problem results (which problem, which distractor was chosen, how long it
 first version. It costs almost nothing now and is the prerequisite for any future adaptive
 difficulty or "she keeps missing 7×8" reporting. Nothing has to consume it yet.
 
+**As built (increment 8):**
+- `GameState.log` holds one record per problem shown, written by the function that causes each
+  event:
+  - `ensureProblem` opens the record, holding the problem and `shownAt`;
+  - `selectTank` adds every tap: the number chosen, and seconds since the problem was shown;
+  - `step` closes it as `correct`, `breached` or `runEnded`.
+- Times are game time, not wall clock.
+- `runLog(state, config, seed)` wraps a finished run with its seed, `mistakeAnswers`,
+  `mistakeKinds`, outcome and length. Storing `mistakeKinds` keeps old logs readable after the
+  active kinds are narrowed.
+- Which distractor a wrong tap was is **not stored**. It is computed later with `mistakesFor`.
+- A correct tap whose drone was still in flight when the run was lost reads as `runEnded`; the tap
+  itself shows the right answer.
+- **Console only for now.** The app prints the log as JSON when a run ends, with times rounded to
+  2 decimals for reading; core keeps exact values. Storing it belongs to profiles/stats (§15).
+
 ---
 
 ## 15. Platform, persistence, privacy

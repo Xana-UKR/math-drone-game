@@ -1,8 +1,25 @@
 # Build Plan
 
-**Status: increment 7 complete. Next: increment 8 — outcome logging.** *(The target player's
-first unassisted session can run any time; it is where `t_answer` gets measured. The play session
-after 8 compares distractor levels with `?mistakes=off` / `?mistakes=traps`.)*
+**Status: increment 8 complete. Next: increment 9 — simulation harness.** *(The play session
+comparing distractor levels, `?mistakes=off` / `?mistakes=traps`, can run now: each run prints its
+log to the console. The target player's first unassisted session is where `t_answer` gets
+measured.)*
+
+- **8 landed (specs/08-outcome-logging.md):**
+  - **The log is a `GameState` field** (`log: ProblemRecord[]`), decided with the author over
+    keeping it beside the state and inferring events from state differences. The 8 existing test
+    files gained only `log: []`.
+  - `ensureProblem` opens a record, `selectTank` adds every tap (`chosen`, `seconds` since shown),
+    and `step` closes it (`correct` / `breached` / `runEnded`), each where the event happens.
+  - A tap with no open record (a hand-built state) logs nothing.
+  - New `src/core/outcomes.ts`: `runLog(state, config, seed)` adds seed, `mistakeAnswers`,
+    `mistakeKinds`, outcome and length.
+  - `main.ts` prints it once per run as JSON in every build, times rounded to 2 decimals (added at
+    verification; core stays exact).
+  - **Kept as is, agreed at review:** a correct tap whose drone is still flying when the run is
+    lost closes as `runEnded`.
+  - **Carried to 9:** the harness builds the same log with `runLog`.
+  - **Carried to profiles/stats:** remove the duplicate `wrongAnswers` (10+ row).
 
 - **7 landed (specs/07-distractor-strategies.md):** new `src/core/mistakes.ts` — `mistakesFor(problem,
   config)` returns `Mistake[]` for five kinds (off-by-one, off-by-two, forgotten carry, operation
@@ -174,7 +191,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **7b** | **`near` distractor level.** Entering tanks prefer a neighbour of a board number (numbers drawn at entry — a `GameState` change). *Built when play shows she has outgrown `traps`* | core | Off-by-one/two on the board for most problems, without breaking §9's generator constraints |
 | **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor (computable from `mistakesFor`), elapsed time; per run: the `mistakeAnswers` level | core | A run dumps records; nothing consumes them yet |
 | **9** | **Simulation harness.** Headless; player modelled as `(t_answer, accuracy)`; 1000 runs per preset; report run length, win rate, breach rate, "no safe answer available" count. **Then tune.** | core | Win rates per preset; DESIGN.md §17a.1 and §17a.2 closed |
-| **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI → audio (Howler) → recall mode → profiles/stats → PWA + offline | mixed | per DESIGN.md §18 priority |
+| **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI → audio (Howler) → recall mode → profiles/stats → PWA + offline. **Profiles/stats also removes `GameState.wrongAnswers`** (4d), which 8's `log` duplicates: the end screen reads the wrong taps from the log, and `summary.test.ts` moves to it | mixed | per DESIGN.md §18 priority |
 
 **Effort:** leave at the Claude Code default (`xhigh`) throughout, except increments **6** and **9** —
 set `max` when opening those sessions. Set it at session start, never mid-session (`WORKFLOW.md`).

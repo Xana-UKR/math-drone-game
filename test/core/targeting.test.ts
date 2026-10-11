@@ -189,6 +189,7 @@ function boardOf(tanks: Tank[]): GameState {
     correct: 0,
     outcome: 'playing',
     wrongAnswers: [],
+    log: [],
   };
 }
 
