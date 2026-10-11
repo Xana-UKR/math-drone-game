@@ -1,3 +1,4 @@
+import { unclearableEntries } from '../core/fairness';
 import { createRng } from '../core/rng';
 import { createGameState, ensureProblem, selectTank, step } from '../core/step';
 import type { GameState } from '../core/types';
@@ -28,6 +29,26 @@ let rng: ReturnType<typeof createRng>;
 let scene: Scene;
 let accumulator = 0;
 let lastTime: number | null = null;
+/** Dev-build §6 assertion: tanks with an id from here on have not been checked yet. */
+let checkedFromId = 1;
+
+/**
+ * DESIGN.md §6's fairness assertion (increment 6), dev builds only: reports each tank at or past
+ * `checkedFromId` that no perfect player could clear. Non-fatal — a `console.error`, never a
+ * throw, so the loop keeps running. With the governor it can only fire for a tank the rules force
+ * in, which needs `tAnswerSeconds` near the traverse time.
+ */
+function checkFairness(): void {
+  if (!import.meta.env.DEV) return;
+  for (const tank of unclearableEntries(state, checkedFromId, config)) {
+    console.error(
+      `DESIGN §6 fairness assertion failed: tank #${tank.id} (number ${tank.number}, ` +
+        `lane ${tank.lane}, x ${tank.x}) entered unclearable at tAnswerSeconds ` +
+        `${config.tAnswerSeconds}`,
+    );
+  }
+  checkedFromId = state.nextId;
+}
 
 /**
  * Seeds, creates the state and builds a fresh scene — called once at load and again on every
@@ -49,6 +70,8 @@ function startRun(): void {
   state = createGameState(config, rng);
   tapQueue.length = 0;
   accumulator = 0;
+  checkedFromId = 1;
+  checkFairness();
 
   if (scene !== undefined) scene.svg.remove();
   scene = createScene(
@@ -72,8 +95,9 @@ function startRun(): void {
 startRun();
 
 function frame(now: number): void {
-  // Schedule the next frame first: one bad frame (a thrown assertion, increment 6) must not
-  // permanently freeze the loop. The error still propagates to the console.
+  // Schedule the next frame first: one bad frame (any thrown error) must not permanently
+  // freeze the loop. The error still propagates to the console. Increment 6's §6 assertion is not
+  // one: it only logs.
   requestAnimationFrame(frame);
 
   if (lastTime === null) lastTime = now;
@@ -92,6 +116,7 @@ function frame(now: number): void {
     }
 
     state = step(state, FIXED_DT, config);
+    checkFairness();
     // Inside the fixed-timestep loop, not once per rAF frame: that would tie rng consumption to
     // the browser's frame rate and destroy same-seed reproducibility.
     state = ensureProblem(state, rng, config);

@@ -44,9 +44,11 @@ export interface GameState {
   time: number;
   tanks: Tank[];
   /**
-   * The wave's not-yet-released tank numbers, in release order — increment 4c's lane refill: the
-   * lane a tank just left (killed or breached) takes `pending[0]` next. No longer carries a lane
-   * or a scheduled time; which lane refills is decided in `step`, by which lane emptied.
+   * The wave's not-yet-released tank numbers, in release order. Each step the spawn governor
+   * (increment 6, `step`) offers `pending[0]` to the lowest-numbered empty lane, and lets it in only
+   * if it would be clearable (`fairness.ts`) or the board is empty; a refused opening position's
+   * number waits here at the head. Carries no lane or scheduled time: which lane a number enters is
+   * decided in `step`.
    */
   pending: number[];
   nextId: number;
@@ -84,8 +86,9 @@ export interface Config {
   /**
    * The opening board's stagger, in core's unitless `x` — increment 4c: the tank at position `i`
    * of a shuffled lane order starts at `x = (i + 0.5) × openingStagger`, so the lanes open at
-   * visibly different depths instead of all arriving together. A field, not a constant, so a
-   * later increment can tune it.
+   * visibly different depths instead of all arriving together. Increment 6: these are candidate
+   * positions, each placed only if clearable (`createGameState`), so a slow `tAnswerSeconds` can
+   * leave the rearmost ones empty. A field, not a constant, so a later increment can tune it.
    */
   readonly openingStagger: number;
   /** DESIGN.md §7's N: the whole run is this many tanks, fixed at the start — not an endless feed. */
@@ -113,7 +116,8 @@ export interface Config {
   readonly hearts: number;
   /**
    * DESIGN.md §6.1/§17a.1: the time a player needs to decide on an answer. The whole fairness
-   * system — the critical urgency threshold (`targeting.ts`), and eventually the spawn governor —
+   * system — savability, the critical urgency threshold (`targeting.ts`), the spawn governor and
+   * opening board (`step.ts`) and the dev-build assertion (`main.ts`), all through `fairness.ts` —
    * is derived from this one number, which §17a.1 calls out as needing to be measured from real
    * play rather than guessed. A placeholder until that measurement exists.
    */

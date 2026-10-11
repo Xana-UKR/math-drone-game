@@ -101,8 +101,10 @@ describe('candidatePool — DESIGN.md §5 tiers', () => {
   });
 
   it('critical: offers only the tanks at or above the critical threshold', () => {
+    // Increment 6: the 0.9 tank has 3.4 s left — past the unsavable line, so never offered — and
+    // the front savable tank (0.75) is critical, so it is offered alone.
     const tanks = [tankAt(0.1, 1), tankAt(0.6, 2), tankAt(0.75, 3), tankAt(0.9, 4)];
-    expect(ids(candidatePool(tanks, config))).toEqual([3, 4]);
+    expect(ids(candidatePool(tanks, config))).toEqual([3]);
   });
 
   it('critical: offers exactly one tank when only one has crossed the threshold', () => {
@@ -118,7 +120,9 @@ describe('candidatePool — DESIGN.md §5 tiers', () => {
   it('critical wins when a huge t_answer derives a threshold below the alert threshold', () => {
     const slow: Config = { ...config, tAnswerSeconds: 12 }; // 1 − 24.4/34 ≈ 0.28
     const tanks = [tankAt(0.1, 1), tankAt(0.3, 2), tankAt(0.45, 3)];
-    expect(ids(candidatePool(tanks, slow))).toEqual([2, 3]);
+    // Increment 6: the critical pool runs from the front to the first critical tank — here the
+    // front one alone.
+    expect(ids(candidatePool(tanks, slow))).toEqual([3]);
   });
 
   it('does not mutate the tanks it is given', () => {

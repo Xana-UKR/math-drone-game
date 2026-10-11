@@ -283,3 +283,24 @@ change stream position depending on how crowded the board was. Exact draws are p
 
 **Weight `1 + u` is deliberately mild** (2 : 1 at most): the relaxed tier exists for variety, and
 a steeper curve would rebuild the front-tank habit 5 was meant to break.
+
+---
+
+## Increment 6 — fairness invariant and spawn governor
+
+**How the bug was found:** a headless simulation (session scratchpad, not kept) of a player who
+answers correctly in exactly `t_answer`. Seed 24 at the shipped config is the reference case — at
+15.9 s the alert tier offered a fresh tank while #4 (12.2 s left) and #2 (15.6 s) waited; both
+went critical together and #4 breached. It is pinned in `fairness.test.ts`.
+
+**Why not a spawns-only governor:** guaranteeing fairness under increment 5's picker needs every
+two tanks ≥ `t_answer + flight` apart. Simulated at 3 s per answer that left 1.9 tanks on the
+board on average and a single tank on 48% of problems (4c's original complaint), and forced the
+opening across half the lane.
+
+**The live target counts wherever it is** — the governor first admitted a fourth tank at 9 s
+because the target being answered had just crossed the unsavable line mid-answer and dropped out
+of the count; the next tank in line then breached. Caught in simulation before the spec.
+
+**Line endings:** `step.test.ts` and `targeting.test.ts` are CRLF in the working tree; git
+normalises to LF (`.gitattributes`), so the warnings on `git diff` are harmless.

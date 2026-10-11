@@ -1,3 +1,4 @@
+import { isClearable, liveTarget } from './fairness';
 import { generateProblem } from './problem';
 import type { Rng } from './rng';
 import { candidatePool, pickTarget } from './targeting';
@@ -36,9 +37,16 @@ const ARRIVAL_EPSILON = 1e-9;
  * board, one per lane, at the position its lane landed in the shuffle: position `i` sits at
  * `x = (i + 0.5) × config.openingStagger`, so the opening board shows tanks at visibly different
  * depths instead of a wall of them arriving together. Ids only need to be unique (render keys its
- * nodes by them, a live problem names its tank by one), so they simply count up from 1. Every
- * remaining number queues in `pending`, in the order it was drawn — the order lane refill (`step`)
- * releases them in.
+ * nodes by them, a live problem names its tank by one), so they simply count up from 1.
+ *
+ * **Governed opening (increment 6).** Those positions are only candidates: they are tried
+ * front-most first, and each is placed only if no tank is placed yet or it is clearable
+ * (`fairness.ts`) among those already placed plus itself — the same rule the governor in `step`
+ * applies to every later entry. A refused position's lane starts empty and its number goes to the
+ * head of `pending`, front-most refused first, ahead of the rest of the wave in draw order. Refusal
+ * does not stop the loop: a position further back is still tried. At the shipped config all four
+ * are placed; the rng draws are the same whatever `tAnswerSeconds` is. Every other number queues in
+ * `pending` in the order it was drawn — the order the governor releases them in.
  *
  * `config.waveSize` (DESIGN.md §7's N) is the whole run: exactly that many tanks, no more ever
  * drawn. `drones` starts at the same N — the pool and the wave share one number by construction,
@@ -84,7 +92,7 @@ export function createGameState(config: Config, rng: Rng): GameState {
   }
 
   const boardCount = Math.min(config.lanes, config.waveSize);
-  const tanks: Tank[] = [];
+  const candidates: Tank[] = [];
   for (let i = 0; i < boardCount; i += 1) {
     const lane = laneOrder[i];
     const number = numbers[i];
@@ -92,13 +100,26 @@ export function createGameState(config: Config, rng: Rng): GameState {
     if (lane === undefined || number === undefined) {
       throw new Error('createGameState: internal error placing the opening board');
     }
-    tanks.push({ id: i + 1, lane, x: (i + 0.5) * config.openingStagger, number });
+    candidates.push({ id: i + 1, lane, x: (i + 0.5) * config.openingStagger, number });
   }
+
+  // Front-most first (highest x). A refusal does not end the loop.
+  const placed: Tank[] = [];
+  const refused: Tank[] = [];
+  for (const candidate of [...candidates].sort((a, b) => b.x - a.x)) {
+    if (placed.length === 0 || isClearable(candidate, placed, null, config)) {
+      placed.push(candidate);
+    } else {
+      refused.push(candidate);
+    }
+  }
+  // Back in position order, as the opening board was before the governor decided it.
+  const tanks = candidates.filter((candidate) => placed.includes(candidate));
 
   return {
     time: 0,
     tanks,
-    pending: numbers.slice(boardCount),
+    pending: [...refused.map((tank) => tank.number), ...numbers.slice(boardCount)],
     nextId: boardCount + 1,
     problem: null,
     drone: null,
@@ -135,8 +156,8 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * ever launches at a tank that is on the board and the closing gap is strictly faster than the
  * tank's own approach to the wall. It is still handled, because a hit drone is otherwise only ever
  * removed on impact: an orphaned one would fly past the far edge forever while `selectTank` keeps
- * refusing every tap, soft-locking the game. (Increment 6 turns the §6 invariant into a real
- * dev-build assertion.) A `miss` drone is simply removed once its new `x` reaches 0.
+ * refusing every tap, soft-locking the game. (Increment 6's dev-build assertion in `main.ts`
+ * watches for the §6 invariant failing.) A `miss` drone is simply removed once its new `x` reaches 0.
  *
  * Moves each surviving tank right by `dt / laneTraverseSeconds`, and retires any tank that reached
  * the wall — using the same `ARRIVAL_EPSILON` tolerance as the drone, so a tank breaches on its
@@ -157,19 +178,20 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * the hit, and an orphaned hit (its target already gone, handled above) earns neither. A breach
  * earns nothing either — it costs a heart, not a correct answer.
  *
- * **Lane refill (increment 4c).** `createGameState` no longer schedules spawns against the clock;
- * every lane holds exactly one tank until the wave runs out. So: every lane that carried a tank at
- * the *start* of this step but carries none of the survivors above — its tank destroyed by the
- * drone's impact, or breached at the wall — takes `pending[0]` next, at `x = 0`, a fresh id from
- * `nextId`. A refilled tank does not move on its own entry step, the same release convention the
- * fixed schedule used. When several lanes empty in the same step (two breaches, or a kill and a
- * breach together) they are refilled in ascending lane order, each taking the next number off the
- * queue — so which lane gets which of the queue's next few numbers is decided by lane number, not
- * by which one emptied first. Refilling stops the moment `pending` runs dry; a lane can end the
- * step empty with the wave not yet over, if nothing is left to put in it. Draws no rng: refill only
- * ever hands out numbers `createGameState` already drew.
+ * **Spawn governor (increments 4c, 6).** `createGameState` does not schedule spawns against the
+ * clock; every lane holds one tank until the wave runs out, and this step fills the empty ones. The
+ * live target is `state.problem.targetId` when that tank survived the moves above, else none. Lanes
+ * are visited in ascending order; one that holds a tank (a survivor, or one entered earlier this
+ * step) is skipped, and entry stops when `pending` runs dry. The next number enters at `x = 0`, with
+ * a fresh id from `nextId`, if the board so far is empty — so a run can never stall — or if the
+ * newcomer is clearable (`fairness.ts`) on the board it joins. The first refusal ends entry for the
+ * step; the held-back lane simply retries next step. A tank entering does not move on its own entry
+ * step, the same release convention the fixed schedule used. At the shipped config the board never
+ * holds more than `lanes` tanks and a newcomer is always clearable, so nothing is held back; the
+ * governor only caps the board once `tAnswerSeconds` outgrows the lanes. Draws no rng: it only ever
+ * hands out numbers `createGameState` already drew.
  *
- * **Winning.** Checked after refill has had its chance to fill the board, so a wave that still has
+ * **Winning.** Checked after entry has had its chance to fill the board, so a wave that still has
  * tanks queued is never mistaken for one that is over. `outcome` becomes `'won'` the step the board
  * and the pending list are *both* empty — the wave fully resolved, by drone or by breach — provided
  * hearts are still above zero; **loss is checked first**, so the tank that spends the last heart
@@ -226,28 +248,26 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   const breaches = tanks.length - movedTanks.length;
   const hearts = Math.max(0, state.hearts - breaches);
 
-  // Lane refill (see the doc comment above). A lane started this step with a tank — recorded from
-  // `state.tanks`, before the drone or the breach filter touched anything — and lost it if that
-  // lane has no survivor among `movedTanks`. Ascending lane order, one pending number each, until
-  // the queue runs dry.
-  const startingLanes = new Set(state.tanks.map((tank) => tank.lane));
-  const survivingLanes = new Set(movedTanks.map((tank) => tank.lane));
-  const emptiedLanes = [...startingLanes]
-    .filter((lane) => !survivingLanes.has(lane))
-    .sort((a, b) => a - b);
+  // Spawn governor (see the doc comment above). The live target still counts while a hit drone is
+  // flying at it — the answer is already given, so this over-counts by one answer for at most one
+  // drone flight (≤ droneTraverseSeconds). Deliberate: the error is on the safe side, and a refused
+  // newcomer simply enters on the step the drone lands.
+  const liveTargetId = liveTarget(state.problem, movedTanks);
 
   let pending = state.pending;
   let nextId = state.nextId;
-  const refilledTanks: Tank[] = [];
-  for (const lane of emptiedLanes) {
+  const nextTanks: Tank[] = [...movedTanks];
+  for (let lane = 0; lane < config.lanes; lane += 1) {
+    if (nextTanks.some((tank) => tank.lane === lane)) continue;
     const [number] = pending;
     if (number === undefined) break;
-    pending = pending.slice(1);
-    refilledTanks.push({ id: nextId, lane, x: 0, number });
-    nextId += 1;
-  }
 
-  const nextTanks = [...movedTanks, ...refilledTanks];
+    const candidate: Tank = { id: nextId, lane, x: 0, number };
+    if (nextTanks.length > 0 && !isClearable(candidate, nextTanks, liveTargetId, config)) break;
+    pending = pending.slice(1);
+    nextId += 1;
+    nextTanks.push(candidate);
+  }
 
   const { problem } = state;
   const nextProblem: LiveProblem | null =
@@ -328,7 +348,7 @@ export function selectTank(state: GameState, tankId: number): GameState {
  * finger), or the board is empty.
  *
  * The target is DESIGN.md §5's urgency pick (`targeting.ts`): `candidatePool` narrows the board to
- * the tier the highest-urgency tank puts it in, then `pickTarget` draws from that pool weighted
+ * the savable tanks, then to the tier the highest-urgency one puts it in, then `pickTarget` draws from that pool weighted
  * toward urgency. Both are pure functions of `state.tanks` and `config`; this is the only place
  * that feeds them the live rng stream.
  */

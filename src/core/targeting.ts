@@ -1,3 +1,4 @@
+import { isSavable } from './fairness';
 import type { Rng } from './rng';
 import type { Config, Tank } from './types';
 
@@ -10,45 +11,64 @@ import type { Config, Tank } from './types';
 /**
  * DESIGN.md §5 calls 0.5 and 0.8 placeholders and says the critical one "must be derived from §6,
  * not chosen by feel". §6.1 derives it as the point past which a tank is already unsavable —
- * `v_tank × t_answer` in core's unitless x, `t_answer / laneTraverseSeconds` below the wall, i.e.
- * `1 − t_answer / laneTraverseSeconds`.
+ * `v_tank × t_answer` in core's unitless x, `1 − t_answer / laneTraverseSeconds`.
  *
- * specs/05-urgency-targeting.md (decided with the author) uses a different line instead: that one
- * is the *unsavable* threshold, and a critical pool built from it would hold only tanks already
- * lost, going empty the moment increment 6 excludes those. Critical here means **"must be offered
- * now"**: a tank skipped for this problem only gets another chance after this answer resolves (one
- * more `t_answer`) and the drone's flight to it, so it needs `t_answer` twice over plus the drone's
- * flight still in hand. That is `2 × t_answer + droneTraverseSeconds` of traverse time left, i.e.
- * `1 − (2 × t_answer + droneTraverseSeconds) / laneTraverseSeconds` — ≈0.694 at this file's
- * defaults, not §6.1's 0.853.
+ * specs/05-urgency-targeting.md (decided with the author) uses a different line instead: critical
+ * means **"must be offered now"**. A tank skipped for this problem only gets another chance after
+ * this answer resolves (one more `t_answer`) and the drone's flight to it, so it needs `t_answer`
+ * twice over plus the drone's flight still in hand: `2 × t_answer + droneTraverseSeconds` of
+ * traverse time left — ≈0.694 at the defaults, not §6.1's 0.853.
+ *
+ * Increment 6 (specs/06-fairness-governor.md) generalises that per place in line. The savable tank
+ * in place `place` (1 = nearest the wall) has others to be answered ahead of it, so it must be
+ * offered now, or one of them must be, once it has no more than `(place + 1) × t_answer +
+ * place × droneTraverseSeconds` left: `1 − ((place + 1) × t_answer + place × flight) / traverse`.
+ * Place 1 is increment 5's value, unchanged.
  */
-export function criticalThreshold(config: Config): number {
+export function criticalThreshold(config: Config, place = 1): number {
   return (
-    1 - (2 * config.tAnswerSeconds + config.droneTraverseSeconds) / config.laneTraverseSeconds
+    1 -
+    ((place + 1) * config.tAnswerSeconds + place * config.droneTraverseSeconds) /
+      config.laneTraverseSeconds
   );
 }
 
 /**
- * DESIGN.md §5's tiers, keyed off the board's highest urgency (`u_max`, the tank nearest the
- * wall). Critical is checked first — specs/05-urgency-targeting.md: deriving a critical threshold
- * below `alertThreshold` (a huge `tAnswerSeconds`) must still win, not fall through to alert. Copies
- * before sorting so the caller's array and tanks are never touched.
+ * DESIGN.md §5's tiers over the **savable** tanks only (`fairness.ts`'s `isSavable` — a tank past
+ * the unsavable line cannot be saved by any answer, so offering it wastes the problem). Savable
+ * tanks are sorted most urgent first (copies before sorting; the caller's array and tanks are never
+ * touched), and the tiers are keyed off them. Critical is checked first —
+ * specs/05-urgency-targeting.md: a critical threshold below `alertThreshold` (a huge
+ * `tAnswerSeconds`) must still win, not fall through to alert.
  *
- * - `u_max` at or above `criticalThreshold` → every tank at or above it (usually one, DESIGN.md
- *   §5 — "must be offered now").
- * - else `u_max` at or above `config.alertThreshold` → the `config.alertPoolSize` most urgent
- *   tanks, or the whole board when it holds fewer than that.
- * - else → the whole board (DESIGN.md §5's relaxed tier: any tank may be the answer).
+ * - empty board → empty pool.
+ * - no savable tank (late in a slowly played wave; DESIGN.md does not cover it) → the one tank with
+ *   the most time left, the likeliest save.
+ * - the savable tank in place `k` at or above `criticalThreshold(config, k)` is critical: it must
+ *   be offered now, or a tank ahead of it must. The pool is every savable tank from the front up to
+ *   and including the first critical one.
+ * - else the most urgent savable tank at or above `config.alertThreshold` → the
+ *   `config.alertPoolSize` most urgent savable tanks, or all of them when there are fewer.
+ * - else → every savable tank (DESIGN.md §5's relaxed tier).
  */
 export function candidatePool(tanks: readonly Tank[], config: Config): Tank[] {
   const sorted = [...tanks].sort((a, b) => b.x - a.x);
-  const uMax = sorted[0]?.x;
-  if (uMax === undefined) return sorted;
+  const last = sorted[sorted.length - 1];
+  if (last === undefined) return sorted;
 
-  const critical = criticalThreshold(config);
-  if (uMax >= critical) return sorted.filter((tank) => tank.x >= critical);
-  if (uMax >= config.alertThreshold) return sorted.slice(0, config.alertPoolSize);
-  return sorted;
+  const savable = sorted.filter((tank) => isSavable(tank, config));
+  const front = savable[0];
+  if (front === undefined) return [last];
+
+  for (let i = 0; i < savable.length; i += 1) {
+    const tank = savable[i];
+    if (tank !== undefined && tank.x >= criticalThreshold(config, i + 1)) {
+      return savable.slice(0, i + 1);
+    }
+  }
+
+  if (front.x >= config.alertThreshold) return savable.slice(0, config.alertPoolSize);
+  return savable;
 }
 
 /**

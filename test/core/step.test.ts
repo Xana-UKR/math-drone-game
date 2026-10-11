@@ -28,6 +28,9 @@ const config: Config = {
   // tests predate hearts; losing is tested in hearts.test.ts (specs/04a-hearts-and-losing.md).
   hearts: 20,
   resupplyEvery: 4,
+  // 4 s, not the inherited 5: increment 6's governor opens only the tanks a t_answer player can
+  // clear, and at 5 s this 20 s traverse can clear three, not four.
+  tAnswerSeconds: 4,
 };
 
 /** A board with no pending spawns, so movement tests are independent of the schedule. */

@@ -140,7 +140,12 @@ describe('createGameState — the opening board', () => {
 describe('step — lane refill', () => {
   it('refills a lane at x = 0 in the same step a drone destroys its tank', () => {
     const board = boardOf(
-      [tankAt(0.5, { id: 1, lane: 2, number: 13 }), tankAt(0.1, { id: 2, lane: 1, number: 7 })],
+      [
+        tankAt(0.5, { id: 1, lane: 2, number: 13 }),
+        tankAt(0.1, { id: 2, lane: 1, number: 7 }),
+        tankAt(0.3, { id: 3, lane: 0, number: 8 }),
+        tankAt(0.2, { id: 4, lane: 3, number: 9 }),
+      ],
       { problem: PROBLEM_FOR_TANK_1, pending: [4, 5] },
     );
     const impact = flyToEnd(selectTank(board, 1));
@@ -153,7 +158,12 @@ describe('step — lane refill', () => {
 
   it('refills a lane at x = 0 in the same step its tank breaches', () => {
     const board = boardOf(
-      [tankAt(ONE_STEP_FROM_WALL, { lane: 3 }), tankAt(0.1, { id: 2, lane: 1, number: 7 })],
+      [
+        tankAt(ONE_STEP_FROM_WALL, { lane: 3 }),
+        tankAt(0.1, { id: 2, lane: 1, number: 7 }),
+        tankAt(0.3, { id: 3, lane: 0, number: 8 }),
+        tankAt(0.2, { id: 4, lane: 2, number: 9 }),
+      ],
       { pending: [4] },
     );
     const after = step(board, DT, config);
@@ -161,8 +171,17 @@ describe('step — lane refill', () => {
   });
 
   it("takes the refill's number from the front of the queue, and drops it from the queue", () => {
-    const after = step(boardOf([tankAt(ONE_STEP_FROM_WALL)], { pending: [4, 5, 6] }), DT, config);
-    expect(after.tanks.map((tank) => tank.number)).toEqual([4]);
+    const board = boardOf(
+      [
+        tankAt(ONE_STEP_FROM_WALL),
+        tankAt(0.3, { id: 2, lane: 1, number: 7 }),
+        tankAt(0.2, { id: 3, lane: 2, number: 8 }),
+        tankAt(0.1, { id: 4, lane: 3, number: 9 }),
+      ],
+      { pending: [4, 5, 6] },
+    );
+    const after = step(board, DT, config);
+    expect(inLane(after, 0).map((tank) => tank.number)).toEqual([4]);
     expect(after.pending).toEqual([5, 6]);
   });
 
@@ -178,6 +197,8 @@ describe('step — lane refill', () => {
       [
         tankAt(ONE_STEP_FROM_WALL, { id: 1, lane: 3, number: 9 }),
         tankAt(ONE_STEP_FROM_WALL, { id: 2, lane: 1, number: 7 }),
+        tankAt(0.3, { id: 3, lane: 0, number: 8 }),
+        tankAt(0.2, { id: 4, lane: 2, number: 10 }),
       ],
       { hearts: 3, pending: [4, 5] },
     );
@@ -191,6 +212,8 @@ describe('step — lane refill', () => {
       [
         tankAt(0.5, { id: 1, lane: 0, number: 13 }),
         tankAt(ONE_STEP_FROM_WALL, { id: 2, lane: 2, number: 7 }),
+        tankAt(0.3, { id: 3, lane: 1, number: 8 }),
+        tankAt(0.2, { id: 4, lane: 3, number: 9 }),
       ],
       {
         problem: PROBLEM_FOR_TANK_1,
@@ -209,21 +232,36 @@ describe('step — lane refill', () => {
 
   it('refills nothing when a miss drone leaves the board', () => {
     const board = boardOf(
-      [tankAt(0.5, { id: 1, number: 13 }), tankAt(0.1, { id: 2, lane: 1, number: 7 })],
+      [
+        tankAt(0.5, { id: 1, number: 13 }),
+        tankAt(0.1, { id: 2, lane: 1, number: 7 }),
+        tankAt(0.3, { id: 3, lane: 2, number: 8 }),
+        tankAt(0.2, { id: 4, lane: 3, number: 9 }),
+      ],
       { problem: PROBLEM_FOR_TANK_1, pending: [4] },
     );
     const after = flyToEnd(selectTank(board, 2));
-    expect(after.tanks.map((tank) => tank.id)).toEqual([1, 2]);
+    expect(after.tanks.map((tank) => tank.id)).toEqual([1, 2, 3, 4]);
     expect(after.pending).toEqual([4]);
   });
 
   it('never refills a lane whose tank is still on the board', () => {
-    const board = boardOf([tankAt(0.2), tankAt(0.1, { id: 2, lane: 1, number: 7 })], {
-      pending: [4],
-    });
+    // Lane 3 is empty, so a tank does enter this step — and it must go there, not into a lane
+    // that still holds its own tank.
+    const board = boardOf(
+      [
+        tankAt(0.2),
+        tankAt(0.1, { id: 2, lane: 1, number: 7 }),
+        tankAt(0.3, { id: 3, lane: 2, number: 8 }),
+      ],
+      { pending: [4, 5] },
+    );
     const after = step(board, DT, config);
-    expect(after.tanks).toHaveLength(2);
-    expect(after.pending).toEqual([4]);
+    for (const lane of [0, 1, 2]) {
+      expect(inLane(after, lane).map((tank) => tank.id)).toEqual([lane + 1]);
+    }
+    expect(inLane(after, 3).map((tank) => tank.number)).toEqual([4]);
+    expect(after.pending).toEqual([5]);
   });
 
   it('leaves an emptied lane empty once the queue has run out', () => {

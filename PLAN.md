@@ -1,6 +1,27 @@
 # Build Plan
 
-**Status: increment 5b complete. Next: increment 6 — fairness invariant + spawn governor (set effort to `max`).**
+**Status: increment 6 complete. Next: increment 7 — distractor strategies.** *(The target player's
+first unassisted session can run any time; it is where `t_answer` gets measured.)*
+
+- **6 landed (specs/06-fairness-governor.md):** DESIGN §6's guarantee now holds in the code — a
+  player answering correctly in exactly `t_answer` never loses a tank (tested over 100 seeds at
+  5 s, 7 s, 9 s and 6 lanes; before, 5.1% of runs lost one at 5 s and 35% at 7 s). **The fix was in
+  the picker, not the spawns** — decided with the author after simulation: one tank per lane already
+  caps the board, so the losses came from §5 offering a newcomer while two older tanks drifted in
+  together. New `src/core/fairness.ts` (`isSavable`, `isClearable`, `liveTarget`,
+  `unclearableEntries`); §5's critical tier is now per place in line (`criticalThreshold(config,
+  place)`), unsavable tanks are never offered, and with none savable the tank with the most time
+  left is. The governor gates every entry, including the opening board; it is inert at the shipped
+  config and caps the board at 3 tanks for a 9 s player. Dev builds log a §6 assertion per
+  unclearable entry (`tAnswerSeconds: 40` fires it). No `Config` or `GameState` fields added.
+  **Carried to 9:** run length grows at slow `t_answer` (≈118 s at 9 s, past §2's 60–90 s); the
+  clearability check assumes a full 0.4 s flight per answer, so at 8 s the opening holds 3 tanks
+  where 4 would have survived in play; the governor still counts the live target during the drone's
+  flight (deliberate, ≤ 0.4 s late per refill). **Carried to 9:** count "no savable tank" picks with
+  `isSavable` for the harness's "no safe answer" metric. **Note for the session:** a perfectly
+  steady player slower than `t_answer` does worse under deadline order (steady 7 s vs the 5 s model:
+  47% of runs won, was 60%); realistic noisy players do not (22% vs 19%) — measuring `t_answer` is
+  the cure.
 
 - **5b landed (specs/05b-round-duration.md):** the end overlay shows `Time: N seconds` under
   "Wrong answers" — render only, from `state.time` (game time: frozen at the run's end, background
@@ -144,7 +165,7 @@ measured values.
 | ~~Spawn interval~~ | ~~6 s~~ | **retired in 4c** — lane refill feeds the board; see the note below |
 | Opening stagger | 0.05 | 4c — opening tanks at 0.025 / 0.075 / 0.125 / 0.175 of the lane |
 | `t_answer` assumption | 5 s | §17a.1 placeholder — to be measured, not trusted (`tAnswerSeconds`) |
-| **Critical urgency threshold** | **~0.69** | *derived*: `1 − (2·t_answer + flight) / traverse` = 1 − 10.4/34 (§5, increment 5). §6.1's unsavable line `1 − t_answer / traverse` ≈ 0.85 is a different number |
+| **Critical urgency threshold** | **~0.69 / 0.54 / 0.38** | *derived* per place in line `k`: `1 − ((k+1)·t_answer + k·flight) / traverse`; place 1 = 1 − 10.4/34 (§5, increments 5–6). §6.1's unsavable line `1 − t_answer / traverse` ≈ 0.85 is a different number |
 | Alert threshold | 0.5 | §5 placeholder; alert pool = the 3 most urgent (`alertPoolSize`) |
 | Drone flight time | ~0.4 s | §4 — drama dial, not fairness |
 | Hearts | 3 | §7 |

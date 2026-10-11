@@ -103,11 +103,12 @@ Each tank has an urgency `u ∈ [0,1]`: `0` at spawn, `1` at the wall.
 When a new problem is needed:
 
 ```
-u_max = highest urgency currently on the board
+consider only savable tanks (§6.1), most urgent first; k = a tank's place in that line
 
-u_max ≥ u_crit        →  candidate pool = tanks at or above u_crit only  (critical: usually exactly one)
-u_max ≥ 0.5           →  candidate pool = the 3 most urgent              (alert: narrowing)
-otherwise             →  candidate pool = all tanks                      (relaxed: any tank may be the answer)
+some tank in place k has u ≥ u_crit(k)  →  pool = places 1..k for the first such k   (critical)
+else u_max ≥ 0.5                        →  pool = the 3 most urgent                   (alert: narrowing)
+otherwise                               →  pool = all savable tanks                   (relaxed: any may be the answer)
+no savable tank at all                  →  pool = the one tank with the most time left (fallback)
 
 pick a target from the pool, weighted by 1 + u (a tank at the wall is twice as likely as a new one)
 build a problem whose answer is that tank's existing number
@@ -130,6 +131,18 @@ flight, and then still needs a full `t_answer` — so it must be offered now onc
 below 0.5 (a very slow player) simply widens the critical tier. *(Increment 5.)* This is **not**
 §6.1's unsavable line `1 − t_answer / traverse` (≈ 0.85): a critical pool built on that line would
 contain only tanks already lost.
+
+**The same reasoning applies to the whole line, not just the front tank** *(increment 6)*. The tank
+in place `k` waits for the `k − 1` ahead of it, so it must be offered now — or a tank ahead of it
+must — once less than `(k+1) · t_answer + k · flight` remains:
+`u_crit(k) = 1 − ((k+1) · t_answer + k · flight) / traverse` (≈ 0.69, 0.54, 0.38 for places 1–3).
+Place 1 is the formula above. Why it matters: with only the front tank protected, the alert tier
+could offer a newcomer while two older tanks close together drifted toward the wall; once both
+were critical, one of them was too late. A player answering correctly in exactly 5 s lost a tank in
+5.1% of simulated runs that way (35% at 7 s). Per-place thresholds bring that to zero.
+
+Unsavable tanks (§6.1) are never offered while a savable one exists. If none is savable — late in
+a slowly played wave — the answer goes on the tank with the most time left, the likeliest save.
 
 ### Edge cases
 
@@ -160,7 +173,7 @@ Three things follow:
 
 1. **The unsavable line is not a feel number.** It sits exactly at `v_tank × t_answer` from the
    wall. Anything closer to the wall than that is already unsavable and must never be offered as
-   the answer (excluding it is increment 6). This is *not* §5's critical threshold — that one sits
+   the answer (excluded since increment 6, §5). This is *not* §5's critical threshold — that one sits
    one answer earlier, at `2 · t_answer + drone flight`, so a tank is offered *before* it crosses
    this line. Both are derived from the same `t_answer`.
 2. **Drone speed is a drama dial, not a fairness dial.** A slower drone doesn't make tanks
@@ -183,20 +196,39 @@ situations by accident and they will feel like the game cheated.
 This is the highest-leverage fairness mechanism in the design, and it is pure logic — fully
 testable without rendering anything.
 
-**Until the governor lands, the board is fed by lane refill: one tank per lane.** A run opens
-with one tank in every lane, at staggered depths `(i + 0.5) × openingStagger` in a seeded random
-lane order (0.05 ships: 0.025 / 0.075 / 0.125 / 0.175 at four lanes, so the opening tanks reach
-the wall ~1.7 s apart rather than together). Whenever a tank leaves the board — destroyed by a
-drone or breaching — the next tank of the wave enters that same lane at once, until the wave runs
-out; then the lanes drain one by one. Every number of a wave is distinct and drawn up front, so
-refilling draws no rng. It decides when tanks arrive, so it is core.
+**How the governor works (increment 6).** The board holds at most one tank per lane (4c). A tank's
+**place in line** `k` is 1 + the other tanks at least as close to the wall that will still be
+answered — the savable ones, plus the live target (the tank whose problem is on the base) wherever
+it is. Answering most-urgent first, its turn comes at `k · t_answer + (k−1) · flight`; it is
+**clearable** if more time than that is left. For `k = 1` that is §6's own condition.
 
-Why: a fixed spawn timer left gaps — first an empty board (increment 4a, patched by an
-empty-board floor in 4b), then, with the floor, a board holding a single tank, and **one tank is
-an obvious answer**. Refill guarantees the child always chooses among as many tanks as there are
-lanes until the wave's tail. *Known gap, left to the governor (increment 6):* two lanes emptied in
-the same step — two breaches, or a kill and a breach — refill side by side and reach the wall
-together. *(Landed in increment 4c; it replaced 4b's floor and the fixed spawn interval.)*
+- **Entry:** every step, each empty lane (ascending lane order) takes the next tank of the wave at
+  `x = 0` only if that tank would be clearable on the board it joins — or if the board is empty, so
+  a run can never stall. The first refusal ends entry for that step; a held-back lane retries every
+  step. No rng.
+- **Opening:** the same rule. Positions `(i + 0.5) × openingStagger` (0.05 ships: 0.025 / 0.075 /
+  0.125 / 0.175, in a seeded lane order) are tried front-most first; each is placed only if
+  clearable behind those already placed (the front one always). A refused position's lane starts
+  empty and its number heads the queue.
+
+**What one tank per lane already does.** At 4 lanes, a 34 s traverse and a 5 s answer, a player can
+clear up to 6 tanks in time, so the governor never has to hold a tank back at the shipped config —
+the board is identical to 4c's lane refill (four tanks, immediate refills). It starts to bind when
+`t_answer` outgrows the lanes (≈ 8.2 s at 4 lanes): then the board holds only what the player can
+clear (3 tanks at 9 s). The unfairness that remained at the shipped config came from the **order**
+in which tanks were offered, which §5's per-place critical tier fixes. A rule built from spawns
+alone (≥ `t_answer + flight` between any two tanks) also works, but it leaves a fast player one tank
+on about half the problems — rejected for the reason below.
+
+**Fairness assertion (§14).** In dev builds, every tank that enters the board is checked; one that
+is not clearable is reported with `console.error` (non-fatal). With the governor in place that
+needs a forced entry, i.e. `t_answer` near the traverse time (setting it to 40 s fires it).
+
+Why one tank per lane: a fixed spawn timer left gaps — first an empty board (increment 4a,
+patched by an empty-board floor in 4b), then, with the floor, a board holding a single tank, and
+**one tank is an obvious answer**. *4c's known gap — two lanes emptied in the same step refilling
+side by side — is closed:* the per-place critical tier serves the pair in turn, so no minimum gap
+between entries is needed.
 
 ---
 
