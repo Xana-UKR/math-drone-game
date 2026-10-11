@@ -158,11 +158,21 @@ export interface Config {
    * DESIGN.md §9's distractor level (increment 7, specs/07-distractor-strategies.md): `'off'` picks
    * the target's problem at random; `'traps'` prefers a problem whose named mistakes
    * (`mistakes.ts`) include a number already on the board, so the other tanks are likelier to be
-   * the wrong answers a child really gives.
+   * the wrong answers a child really gives. `'near'` (increment 7b, specs/07b-near-distractors.md)
+   * does everything `'traps'` does and also clusters the wave's numbers and the order they enter
+   * in, so off-by-one and off-by-two neighbours share the board (`createGameState`, `step`).
    */
-  readonly mistakeAnswers: 'off' | 'traps';
+  readonly mistakeAnswers: 'off' | 'traps' | 'near';
   /** Which mistake kinds count as traps and are listed by `mistakesFor` (DESIGN.md §9). */
   readonly mistakeKinds: readonly MistakeKind[];
+  /**
+   * How many of the wave's numbers `'near'` draws as one cluster of neighbours before starting a
+   * new one (increment 7b, specs/07b-near-distractors.md). Only `'near'` reads it; 1 draws as
+   * `'traps'`. Larger clusters put close numbers on the board more often but narrow a run's
+   * answers: 4 gives ~67% of problems a ±1/±2 tank on the board at 0-20 with a wave span of 18,
+   * and a span of 68 at 0-100 instead of 14 for a single cluster.
+   */
+  readonly nearClusterSize: number;
 }
 
 /** DESIGN.md §9's named mistakes for a `+`/`-` problem; see `mistakes.ts` for how each is computed. */
@@ -204,4 +214,7 @@ export const defaultConfig: Config = {
   // which ones she actually makes.
   mistakeAnswers: 'traps',
   mistakeKinds: ['offByOne', 'offByTwo', 'forgottenCarry', 'operationSwap', 'digitReversal'],
+  // 4 (specs/07b-near-distractors.md, decided with the author): one board's worth of tanks at 4
+  // lanes; ~67% ±1/±2 on the board at 0-20 and a wave spanning 68 numbers at 0-100.
+  nearClusterSize: 4,
 };

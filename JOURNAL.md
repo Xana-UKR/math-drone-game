@@ -339,3 +339,23 @@ instead of silently logging `breached`.
 
 **Review items dismissed:** O(n) copy of the log per event (13–30 records a run); per-field
 rounding drift of up to 0.01 s in the printed log (core is exact); the `logged` flag in `main.ts`.
+
+
+## Increment 7b — `near` distractor level
+
+**Why no `GameState` change:** the ladder row assumed numbers chosen at entry (rng in `step` plus a
+reserve of unused numbers). Simulated against two rng-free changes: reordering the wave's 13
+numbers at entry gave 63%, a clustered draw alone 69%, both together 74%, entry-time choice 78%.
+The 4-point gap did not justify the state change.
+
+**Clusters, after review:** a single chain caps a 13-number wave's span at 24 and in practice ~14,
+whatever the answer range. The author asked for clusters now rather than at the 0–100 preset.
+
+**Review items left as is, agreed with the author:**
+- The entry pick scores against the live target even while its hit drone flies (≤ 0.4 s), so it can
+  pick a neighbour of a tank about to die. A lane can only open in that window through a breach, so
+  this is rare.
+- The pick always takes the highest scorer, so a number with no neighbours can wait to the wave's
+  end and enter onto a thin board. The measured 67% already includes this.
+- `neighbourScore` re-encodes the ±1/±2 gaps rather than reading them from `mistakes.ts` (not in the
+  spec's files); the level list is repeated in `main.ts`'s dev override.

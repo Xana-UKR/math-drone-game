@@ -48,7 +48,8 @@ export function candidateProblems(answer: number, config: Config): Problem[] {
  * the other tanks' numbers — when there are any, otherwise from all candidates. Answer-only kinds
  * (off-by-one, off-by-two, reversed digits) are shared by every candidate, so counting them would
  * let any of them through and make the filter a no-op. Under `'off'`, or with `others` empty,
- * `others` changes nothing. Still one `rng.int` draw either way.
+ * `others` changes nothing. Still one `rng.int` draw either way. `'near'` (increment 7b) treats
+ * this draw exactly as `'traps'`; its clustering happens in `createGameState` and `step`.
  */
 export function generateProblem(
   answer: number,
@@ -58,7 +59,7 @@ export function generateProblem(
 ): Problem {
   const all = candidateProblems(answer, config);
   let candidates = all;
-  if (config.mistakeAnswers === 'traps') {
+  if (config.mistakeAnswers === 'traps' || config.mistakeAnswers === 'near') {
     const trapping = all.filter((candidate) =>
       mistakesFor(candidate, config).some(
         (mistake) => PROBLEM_DEPENDENT_KINDS.includes(mistake.kind) && others.includes(mistake.value),

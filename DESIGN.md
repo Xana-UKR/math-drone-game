@@ -352,8 +352,9 @@ so the game cannot plant a mistake by choosing numbers. Instead, when it picks t
 it prefers one whose mistakes are already on the board: with a 1 on another tank, 15 is asked as
 `8 + 7`, not `15 + 0`. Only **problem-dependent** mistakes (forgotten carry, operation swap) can
 steer this choice. Off-by-one, off-by-two and digit reversal depend only on the answer, so every
-candidate problem shares them. They still label a wrong tap, and raising them needs the entry
-numbers to be chosen (increment 7b).
+candidate problem shares them. They still label a wrong tap. Raising them is the `near` level's
+job (increment 7b), which chooses *which* numbers the wave holds and the order they enter in. A
+tank still owns its number from the moment it enters.
 
 **Distractor strategy is a per-preset level that scales with difficulty** (`mistakeAnswers`):
 
@@ -361,7 +362,14 @@ numbers to be chosen (increment 7b).
 |---|---|
 | `off` | the problem is drawn at random from all candidates |
 | `traps` | the problem prefers one whose problem-dependent mistake is on the board — the default (a trap on the board for ~77% of problems, against ~10% at `off`) |
-| `near` (7b) | `traps`, plus entering tanks prefer a neighbour of a board number |
+| `near` | everything `traps` does, plus close numbers on the board: the wave is drawn in clusters of `nearClusterSize` (each number after a cluster's first is ±1 or ±2 from one in its cluster), and an entering tank takes the waiting number with the most ±1/±2 neighbours on the board (a ±1 counts double). A ±1 or ±2 on another tank for ~67% of problems, against ~41% at `traps` |
+
+**`near` trades closeness for spread** (`nearClusterSize`, increment 7b). One cluster per wave puts
+a ±1/±2 on the board for ~74% of problems but squeezes a run's answers into a band of ~14 numbers
+at *any* range. In 0–100 that is a quarter of the range. Clusters of 4, one board's worth at 4
+lanes, keep 0–20 almost fully spread (wave span 18) and 0–100 at a span of 68 (58% of problems with
+a neighbour on the board, against 9% at `traps`). A wider-range preset should re-tune the size.
+Which gaps count follows `mistakeKinds`: ±1 needs `offByOne`, ±2 needs `offByTwo`.
 
 *This replaces an earlier rule that a 7-year-old should start with "well-separated" distractors
 (13, 40 and 82, not 12, 13 and 14). It was dropped with the author on 2026-10-11: the target player

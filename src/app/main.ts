@@ -17,14 +17,20 @@ if (appSlot === null) throw new Error('#app not found');
 // every restart) see `HTMLDivElement`, not the nullable type `querySelector` returns.
 const app: HTMLDivElement = appSlot;
 
-// Dev builds only (specs/07-distractor-strategies.md): `?mistakes=off` or `?mistakes=traps`
-// overrides the distractor level, so a play session can compare them between runs.
+// Dev builds only (specs/07-distractor-strategies.md, specs/07b-near-distractors.md):
+// `?mistakes=off`, `?mistakes=traps` or `?mistakes=near` overrides the distractor level, so a play
+// session can compare them between runs.
 const mistakesParam = import.meta.env.DEV ? new URLSearchParams(location.search).get('mistakes') : null;
-if (mistakesParam !== null && mistakesParam !== 'off' && mistakesParam !== 'traps') {
-  console.warn(`Ignoring ?mistakes=${mistakesParam}: expected 'off' or 'traps'`);
+if (
+  mistakesParam !== null &&
+  mistakesParam !== 'off' &&
+  mistakesParam !== 'traps' &&
+  mistakesParam !== 'near'
+) {
+  console.warn(`Ignoring ?mistakes=${mistakesParam}: expected 'off', 'traps' or 'near'`);
 }
 const config: Config =
-  mistakesParam === 'off' || mistakesParam === 'traps'
+  mistakesParam === 'off' || mistakesParam === 'traps' || mistakesParam === 'near'
     ? { ...defaultConfig, mistakeAnswers: mistakesParam }
     : defaultConfig;
 

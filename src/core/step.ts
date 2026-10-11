@@ -19,6 +19,42 @@ import type { Config, Drone, GameState, LiveProblem, Problem, ProblemRecord, Tan
 const ARRIVAL_EPSILON = 1e-9;
 
 /**
+ * How near `number` sits to the `others` under `config.mistakeKinds` (specs/07b-near-distractors.md):
+ * each other at a gap of 1 scores 2 when `offByOne` is active, each at a gap of 2 scores 1 when
+ * `offByTwo` is. Zero means nothing on that side is a neighbour, which with neither kind active is
+ * always.
+ */
+function neighbourScore(number: number, others: readonly number[], config: Config): number {
+  const one = config.mistakeKinds.includes('offByOne');
+  const two = config.mistakeKinds.includes('offByTwo');
+  let score = 0;
+  for (const other of others) {
+    const gap = Math.abs(number - other);
+    if (gap === 1 && one) score += 2;
+    else if (gap === 2 && two) score += 1;
+  }
+  return score;
+}
+
+/**
+ * The index in `pending` of the number with the highest `neighbourScore` against `board`; the
+ * earliest wins a tie, so with every score zero it is 0. Precondition: `pending` is non-empty.
+ */
+function nearestPendingIndex(pending: readonly number[], board: readonly Tank[], config: Config): number {
+  const boardNumbers = board.map((tank) => tank.number);
+  let best = 0;
+  let bestScore = -1;
+  pending.forEach((number, index) => {
+    const score = neighbourScore(number, boardNumbers, config);
+    if (score > bestScore) {
+      best = index;
+      bestScore = score;
+    }
+  });
+  return best;
+}
+
+/**
  * Builds the whole wave and the opening board up front — the only place randomness is consumed
  * for either. `step` itself is pure and reads no rng.
  *
@@ -48,6 +84,14 @@ const ARRIVAL_EPSILON = 1e-9;
  * are placed; the rng draws are the same whatever `tAnswerSeconds` is. Every other number queues in
  * `pending` in the order it was drawn — the order the governor releases them in.
  *
+ * **Clustered draw (increment 7b, specs/07b-near-distractors.md).** Under
+ * `config.mistakeAnswers === 'near'`, the wave is drawn in clusters of `config.nearClusterSize`.
+ * The first number of each cluster is drawn from all allowed numbers; each other number (still one
+ * `rng.int`) from the allowed numbers that neighbour a number already drawn in the same cluster —
+ * one apart if `offByOne` is in `config.mistakeKinds`, two apart if `offByTwo` is — or, when none
+ * does, from all allowed numbers. With neither kind active, or a cluster size of 1, it draws
+ * exactly as `'traps'` does. Under `'off'` and `'traps'` the draw is untouched.
+ *
  * `config.waveSize` (DESIGN.md §7's N) is the whole run: exactly that many tanks, no more ever
  * drawn. `drones` starts at the same N — the pool and the wave share one number by construction,
  * not by a second field that could drift from it — and `correct` starts at zero.
@@ -61,17 +105,30 @@ export function createGameState(config: Config, rng: Rng): GameState {
     );
   }
 
+  const clustered = config.mistakeAnswers === 'near';
+  if (clustered && !(Number.isInteger(config.nearClusterSize) && config.nearClusterSize >= 1)) {
+    throw new Error(
+      `createGameState: nearClusterSize must be a whole number of at least 1, got ${config.nearClusterSize}`,
+    );
+  }
+
   const numbers: number[] = [];
   const drawn = new Set<number>();
   for (let i = 0; i < config.waveSize; i += 1) {
-    const allowed: number[] = [];
+    let allowed: number[] = [];
     for (let n = config.answerMin; n <= config.answerMax; n += 1) {
       if (!drawn.has(n)) allowed.push(n);
     }
+    if (clustered && i % config.nearClusterSize !== 0) {
+      const cluster = numbers.slice(i - (i % config.nearClusterSize), i);
+      const near = allowed.filter((n) => neighbourScore(n, cluster, config) > 0);
+      if (near.length > 0) allowed = near;
+    }
 
     const number = allowed[rng.int(0, allowed.length)];
-    // Unreachable given the range check above: `allowed.length` is `rangeSize - i`, at least
-    // `config.waveSize - i`, which is positive for every i below config.waveSize.
+    // Unreachable given the range check above: the full list holds `rangeSize - i` numbers, at
+    // least `config.waveSize - i`, which is positive for every i below config.waveSize; `'near'`
+    // narrows it only to a non-empty subset.
     if (number === undefined) throw new Error('createGameState: no number left to draw');
 
     drawn.add(number);
@@ -192,6 +249,13 @@ export function createGameState(config: Config, rng: Rng): GameState {
  * governor only caps the board once `tAnswerSeconds` outgrows the lanes. Draws no rng: it only ever
  * hands out numbers `createGameState` already drew.
  *
+ * **Entry pick (increment 7b, specs/07b-near-distractors.md).** Under `mistakeAnswers === 'near'`
+ * the newcomer is not `pending[0]` but the pending number with the highest neighbour score against
+ * the board it joins, tanks entered earlier this step included (`nearestPendingIndex`). Ties go to
+ * the earliest in `pending`; all zero takes `pending[0]`. The pick is made before the clearability
+ * check, which does not depend on the number, so a refused entry removes nothing from `pending`.
+ * Under `'off'` and `'traps'` the head enters, exactly as before.
+ *
  * **Winning.** Checked after entry has had its chance to fill the board, so a wave that still has
  * tanks queued is never mistaken for one that is over. `outcome` becomes `'won'` the step the board
  * and the pending list are *both* empty — the wave fully resolved, by drone or by breach — provided
@@ -276,12 +340,16 @@ export function step(state: GameState, dt: number, config: Config): GameState {
   const nextTanks: Tank[] = [...movedTanks];
   for (let lane = 0; lane < config.lanes; lane += 1) {
     if (nextTanks.some((tank) => tank.lane === lane)) continue;
-    const [number] = pending;
+    if (pending.length === 0) break;
+
+    const pickedIndex = config.mistakeAnswers === 'near' ? nearestPendingIndex(pending, nextTanks, config) : 0;
+    const number = pending[pickedIndex];
+    // Unreachable: `pending` is non-empty and the index is chosen from it.
     if (number === undefined) break;
 
     const candidate: Tank = { id: nextId, lane, x: 0, number };
     if (nextTanks.length > 0 && !isClearable(candidate, nextTanks, liveTargetId, config)) break;
-    pending = pending.slice(1);
+    pending = [...pending.slice(0, pickedIndex), ...pending.slice(pickedIndex + 1)];
     nextId += 1;
     nextTanks.push(candidate);
   }
@@ -390,7 +458,7 @@ export function selectTank(state: GameState, tankId: number): GameState {
  * the savable tanks, then to the tier the highest-urgency one puts it in, then `pickTarget` draws from that pool weighted
  * toward urgency. Both are pure functions of `state.tanks` and `config`; this is the only place
  * that feeds them the live rng stream. The problem is drawn with the other tanks' numbers (the
- * target's own excluded) so that, under `config.mistakeAnswers === 'traps'`, it can invite a
+ * target's own excluded) so that, under `config.mistakeAnswers` `'traps'` or `'near'`, it can invite a
  * mistake already on the board (`generateProblem`). Also appends an open `log` record for the new
  * problem, stamped with `state.time`.
  */

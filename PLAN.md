@@ -1,9 +1,27 @@
 # Build Plan
 
-**Status: increment 8 complete. Next: increment 9 — simulation harness.** *(The play session
-comparing distractor levels, `?mistakes=off` / `?mistakes=traps`, can run now: each run prints its
-log to the console. The target player's first unassisted session is where `t_answer` gets
-measured.)*
+**Status: increment 7b complete (built after 8). Next: increment 9 — simulation harness.** *(The
+play session comparing distractor levels, `?mistakes=off` / `traps` / `near`, can run now: each run
+prints its log to the console, including its level. The target player's first unassisted session is
+where `t_answer` gets measured, so note which level a measured `t_answer` was played at.)*
+
+- **7b landed (specs/07b-near-distractors.md), ahead of 9 at the author's call (2026-10-11):**
+  the author saw the target player answer `traps` problems fast and correctly.
+  - **No `GameState` change and no rng in `step`, unlike this ladder's row.** Two changes do the
+    work. First, under `near` `createGameState` draws the wave in clusters of `nearClusterSize`;
+    each number after a cluster's first is ±1/±2 from one in its cluster. Second, the spawn
+    governor lets an entering tank take the waiting number with the most ±1/±2 neighbours on the
+    board (±1 scores 2, ±2 scores 1; ties go to the queue's order). The ladder's version (numbers
+    chosen at entry from the whole range) measured 78% against the first draft's 74%; it is kept
+    in reserve.
+  - **Changed after review, with the author:** one cluster per wave narrowed a run's answers to
+    ~14 numbers at any range. `Config.nearClusterSize` (ships 4) restores the spread: ±1/±2 on the
+    board for 67% of problems at 0–20 (41% at `traps`); at 0–100 a span of 68 instead of 14. DESIGN
+    §9 has the trade-off table. `traps` stays the shipped level; dev builds take `?mistakes=near`.
+  - Under `near`, `createGameState` throws on a `nearClusterSize` that is not a whole number ≥ 1.
+  - **Kept as is, agreed at review:** the entry pick scores against a tank whose drone is in
+    flight; a number with no neighbours can wait to the wave's end (both in `JOURNAL.md`).
+  - **Carried to presets (10+):** a 0–100 preset re-tunes `nearClusterSize`.
 
 - **8 landed (specs/08-outcome-logging.md):**
   - **The log is a `GameState` field** (`log: ProblemRecord[]`), decided with the author over
@@ -188,7 +206,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **5b** | **Round duration.** End overlay shows `Time: N seconds` (game time), under "Wrong answers" — added at the author's request | vertical | The time on the end screen matches a phone stopwatch, win or lose |
 | **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces 4c's lane refill | core | Setting `t_answer` absurdly high makes the assertion fire |
 | **7** | **Distractor strategies.** Named `+`/`−` mistakes (off-by-one, off-by-two, forgotten carry, operation swap, digit reversal); `mistakeAnswers` level `off` / `traps` — `traps` picks the target's problem so a problem-dependent mistake is on the board | core | A test per mistake; `traps` puts a trap on the board for most problems; `off` plays as before |
-| **7b** | **`near` distractor level.** Entering tanks prefer a neighbour of a board number (numbers drawn at entry — a `GameState` change). *Built when play shows she has outgrown `traps`* | core | Off-by-one/two on the board for most problems, without breaking §9's generator constraints |
+| **7b** | **`near` distractor level.** The wave is drawn in clusters of close numbers, and entering tanks prefer a neighbour of a board number — no `GameState` change (specs/07b-near-distractors.md). *Built after 8, when play showed she had outgrown `traps`* | core | Off-by-one/two on the board for most problems, without breaking §9's generator constraints |
 | **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor (computable from `mistakesFor`), elapsed time; per run: the `mistakeAnswers` level | core | A run dumps records; nothing consumes them yet |
 | **9** | **Simulation harness.** Headless; player modelled as `(t_answer, accuracy)`; 1000 runs per preset; report run length, win rate, breach rate, "no safe answer available" count. **Then tune.** | core | Win rates per preset; DESIGN.md §17a.1 and §17a.2 closed |
 | **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI → audio (Howler) → recall mode → profiles/stats → PWA + offline. **Profiles/stats also removes `GameState.wrongAnswers`** (4d), which 8's `log` duplicates: the end screen reads the wrong taps from the log, and `summary.test.ts` moves to it | mixed | per DESIGN.md §18 priority |
@@ -219,7 +237,7 @@ measured values.
 | Drones | start N, +1 per M=4 correct | §7 — **M = 4 decided 2026-10-09** |
 | Wave size N | 13 | §7 — `floor((N−1)/M)` = a 3-mistake error budget; ~65 s at a 5 s answer (4c) |
 | Problems | add/sub within 20, carrying and borrowing allowed | §2 default preset |
-| Distractors | `traps`, all five mistake kinds | §9 — **was "well-separated"; dropped in 7 with the author** (`mistakeAnswers`, `mistakeKinds`) |
+| Distractors | `traps`, all five mistake kinds; `near` available, clusters of 4 | §9 — **was "well-separated"; dropped in 7 with the author** (`mistakeAnswers`, `mistakeKinds`, `nearClusterSize` from 7b) |
 
 The critical threshold is **computed** from `t_answer` and traverse time, never typed in — §6 is
 explicit that this is the one threshold that must be derived. Encode it as a function so changing
@@ -257,10 +275,10 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 7 it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
+meaning. As of increment 7b it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
 `waveSize`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
 `droneTraverseSeconds`, `hearts`, `resupplyEvery`, `tAnswerSeconds`, `alertThreshold`,
-`alertPoolSize`, `mistakeAnswers` and `mistakeKinds`.
+`alertPoolSize`, `mistakeAnswers`, `mistakeKinds` and `nearClusterSize`.
 
 **`droneTraverseSeconds` is a speed, not a flight duration.** It is the time to cross the full
 board width, wall to far edge, so a near tank dies sooner than a distant one. The table's
