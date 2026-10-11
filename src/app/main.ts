@@ -1,7 +1,7 @@
 import { unclearableEntries } from '../core/fairness';
 import { createRng } from '../core/rng';
 import { createGameState, ensureProblem, selectTank, step } from '../core/step';
-import type { GameState } from '../core/types';
+import type { Config, GameState } from '../core/types';
 import { defaultConfig } from '../core/types';
 import { createScene } from '../render/scene';
 import type { Scene } from '../render/scene';
@@ -16,7 +16,16 @@ if (appSlot === null) throw new Error('#app not found');
 // every restart) see `HTMLDivElement`, not the nullable type `querySelector` returns.
 const app: HTMLDivElement = appSlot;
 
-const config = defaultConfig;
+// Dev builds only (specs/07-distractor-strategies.md): `?mistakes=off` or `?mistakes=traps`
+// overrides the distractor level, so a play session can compare them between runs.
+const mistakesParam = import.meta.env.DEV ? new URLSearchParams(location.search).get('mistakes') : null;
+if (mistakesParam !== null && mistakesParam !== 'off' && mistakesParam !== 'traps') {
+  console.warn(`Ignoring ?mistakes=${mistakesParam}: expected 'off' or 'traps'`);
+}
+const config: Config =
+  mistakesParam === 'off' || mistakesParam === 'traps'
+    ? { ...defaultConfig, mistakeAnswers: mistakesParam }
+    : defaultConfig;
 
 // Filled by the scene's click listeners, drained at most one per fixed step, inside the loop
 // below and before `step` — the same reason `ensureProblem` sits there: increment 9 replays a run

@@ -330,17 +330,43 @@ reasoning impossible.
 ### Distractors are the educational content
 
 If wrong answers are random numbers, the child doesn't do arithmetic — they compute the answer once
-and pattern-match a string. Good distractors encode real mistakes:
+and pattern-match a string. Good distractors encode real mistakes. The named mistakes for `+`/`−`
+(`src/core/mistakes.ts`, increment 7):
 
-- Adjacent times-table fact (`7 × 8` → `63` or `49`)
-- Off-by-one / forgotten carry
-- Operand confusion (`7 × 8` → `15`)
-- Digit reversal (`56` → `65`)
+- **Off-by-one** — answer ± 1.
+- **Off-by-two** — answer ± 2. Added by the author: a miscount of 1 or 2 is likely the commonest
+  mistake at age 7.
+- **Forgotten carry** — only when the problem regroups. `+` drops the carried ten (`8 + 7` → `5`);
+  `−` takes the smaller ones digit from the larger instead of borrowing (`15 − 8` → `13`).
+- **Operation swap** (operand confusion) — the other operation (`8 + 7` → `1`; `12 − 5` → `17`).
+- **Digit reversal** — a two-digit answer with differing digits (`20` → `2`; `56` → `65`). It almost
+  never fires within 20.
+- *Adjacent times-table fact* (`7 × 8` → `63` or `49`) — when `×` exists; for `+` it equals
+  off-by-one.
 
-**Distractor strategy scales with difficulty alongside the number ranges.** Near-miss distractors
-make the game much harder — choosing between 12, 13 and 14 under time pressure is a very different
-experience from choosing between 13, 40 and 82. A 7-year-old should start with well-separated
-distractors.
+Only values inside the answer range count, and never the answer itself. **Which kinds are active is
+a setting** (`mistakeKinds`), so that it can be narrowed to the mistakes the child actually makes.
+
+**The problem fits the board, not the board the problem.** Tank numbers are fixed at spawn (above),
+so the game cannot plant a mistake by choosing numbers. Instead, when it picks the target's problem
+it prefers one whose mistakes are already on the board: with a 1 on another tank, 15 is asked as
+`8 + 7`, not `15 + 0`. Only **problem-dependent** mistakes (forgotten carry, operation swap) can
+steer this choice. Off-by-one, off-by-two and digit reversal depend only on the answer, so every
+candidate problem shares them. They still label a wrong tap, and raising them needs the entry
+numbers to be chosen (increment 7b).
+
+**Distractor strategy is a per-preset level that scales with difficulty** (`mistakeAnswers`):
+
+| Level | What the game does |
+|---|---|
+| `off` | the problem is drawn at random from all candidates |
+| `traps` | the problem prefers one whose problem-dependent mistake is on the board — the default (a trap on the board for ~77% of problems, against ~10% at `off`) |
+| `near` (7b) | `traps`, plus entering tanks prefer a neighbour of a board number |
+
+*This replaces an earlier rule that a 7-year-old should start with "well-separated" distractors
+(13, 40 and 82, not 12, 13 and 14). It was dropped with the author on 2026-10-11: the target player
+was making no wrong answers, so keeping numbers apart would only make the game easier. Difficulty
+now rises by raising the level.*
 
 Bonus: distractor choice tells you *which* misconception a child has when they miss. Worth recording
 even if nothing consumes it yet (see §14).
@@ -375,7 +401,7 @@ That makes difficulty tuning effectively one-dimensional, and this is the whole 
 | Spawn rate / governor | How many demands compete for those seconds |
 | Lane count | Board width; also screen-size dependent |
 | Problem difficulty | Grows `t_answer` |
-| Distractor closeness | Grows `t_answer` |
+| Distractor level (§9: `off` / `traps` / `near`) | Grows `t_answer` |
 | Recognition → recall | Grows `t_answer` a lot; the big one |
 | Drone speed | Drama only — **not** fairness |
 

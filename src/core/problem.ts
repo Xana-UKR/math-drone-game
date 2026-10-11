@@ -1,15 +1,6 @@
+import { addRegroups, mistakesFor, PROBLEM_DEPENDENT_KINDS, subRegroups } from './mistakes';
 import type { Rng } from './rng';
 import type { Config, Problem } from './types';
-
-/** True when adding a and b requires carrying past the ones digit. */
-function addRegroups(a: number, b: number): boolean {
-  return (a % 10) + (b % 10) >= 10;
-}
-
-/** True when subtracting b from a requires borrowing from the tens digit. */
-function subRegroups(a: number, b: number): boolean {
-  return a % 10 < b % 10;
-}
 
 /**
  * Enumerates every `a op b` that evaluates to `answer` under `config` — no rejection sampling.
@@ -51,9 +42,30 @@ export function candidateProblems(answer: number, config: Config): Problem[] {
  * when no candidate exists, which `candidateProblems`' enumeration makes a provable fact instead
  * of a hope. The emptiness check has to come before the draw: `rng.int(0, 0)` throws its own
  * opaque range error otherwise.
+ *
+ * Under `config.mistakeAnswers === 'traps'` (increment 7), the draw is from the candidates with a
+ * problem-dependent mistake (`PROBLEM_DEPENDENT_KINDS` in `mistakes.ts`) equal to one of `others` —
+ * the other tanks' numbers — when there are any, otherwise from all candidates. Answer-only kinds
+ * (off-by-one, off-by-two, reversed digits) are shared by every candidate, so counting them would
+ * let any of them through and make the filter a no-op. Under `'off'`, or with `others` empty,
+ * `others` changes nothing. Still one `rng.int` draw either way.
  */
-export function generateProblem(answer: number, rng: Rng, config: Config): Problem {
-  const candidates = candidateProblems(answer, config);
+export function generateProblem(
+  answer: number,
+  rng: Rng,
+  config: Config,
+  others: readonly number[] = [],
+): Problem {
+  const all = candidateProblems(answer, config);
+  let candidates = all;
+  if (config.mistakeAnswers === 'traps') {
+    const trapping = all.filter((candidate) =>
+      mistakesFor(candidate, config).some(
+        (mistake) => PROBLEM_DEPENDENT_KINDS.includes(mistake.kind) && others.includes(mistake.value),
+      ),
+    );
+    if (trapping.length > 0) candidates = trapping;
+  }
   const problem = candidates.length === 0 ? undefined : candidates[rng.int(0, candidates.length)];
   if (problem === undefined) {
     throw new Error(`generateProblem: no candidate problem produces answer ${answer}`);

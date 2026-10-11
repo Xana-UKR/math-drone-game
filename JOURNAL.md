@@ -304,3 +304,25 @@ of the count; the next tank in line then breached. Caught in simulation before t
 
 **Line endings:** `step.test.ts` and `targeting.test.ts` are CRLF in the working tree; git
 normalises to LF (`.gitattributes`), so the warnings on `git diff` are harmless.
+
+---
+
+## Increment 7 — distractor strategies
+
+**Why the problem fits the board and not the reverse:** §9 fixes a tank's number at spawn, so the
+only free choice when a problem is needed is *which* `a op b` to ask. `traps` spends that choice;
+planting numbers is `near` (7b), which needs entry-time draws.
+
+**The review bug:** the filter first accepted any listed mistake. Off-by-one, off-by-two and digit
+reversal are functions of the answer alone, so with e.g. 14 on a board for answer 15 every
+candidate passed and the pick was uniform. The original 83% "mistake on the board" was mostly
+that: 47% of problems already had one at `off`. The honest metric is the problem-dependent rate,
+10% → 77%.
+
+**Test data trap:** for answer 15 every problem-dependent mistake is odd (|a − b| and a + b have
+the parity of 15, and the carry value is 5). A board meant to hold "only answer-only mistakes"
+must use even numbers — 13 and 17 are also swaps (14 + 1, 16 − 1).
+
+**Regroup helpers live in `mistakes.ts`** (exported, imported by `problem.ts`) so that "this
+problem regroups" has one definition and the two modules don't import each other.
+

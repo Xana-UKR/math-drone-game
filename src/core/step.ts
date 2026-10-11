@@ -350,7 +350,9 @@ export function selectTank(state: GameState, tankId: number): GameState {
  * The target is DESIGN.md §5's urgency pick (`targeting.ts`): `candidatePool` narrows the board to
  * the savable tanks, then to the tier the highest-urgency one puts it in, then `pickTarget` draws from that pool weighted
  * toward urgency. Both are pure functions of `state.tanks` and `config`; this is the only place
- * that feeds them the live rng stream.
+ * that feeds them the live rng stream. The problem is drawn with the other tanks' numbers (the
+ * target's own excluded) so that, under `config.mistakeAnswers === 'traps'`, it can invite a
+ * mistake already on the board (`generateProblem`).
  */
 export function ensureProblem(state: GameState, rng: Rng, config: Config): GameState {
   if (state.outcome !== 'playing') return state;
@@ -358,6 +360,7 @@ export function ensureProblem(state: GameState, rng: Rng, config: Config): GameS
 
   const target = pickTarget(candidatePool(state.tanks, config), rng);
 
-  const generated = generateProblem(target.number, rng, config);
+  const others = state.tanks.filter((tank) => tank.id !== target.id).map((tank) => tank.number);
+  const generated = generateProblem(target.number, rng, config, others);
   return { ...state, problem: { ...generated, targetId: target.id } };
 }

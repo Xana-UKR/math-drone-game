@@ -134,7 +134,24 @@ export interface Config {
    * board.
    */
   readonly alertPoolSize: number;
+  /**
+   * DESIGN.md §9's distractor level (increment 7, specs/07-distractor-strategies.md): `'off'` picks
+   * the target's problem at random; `'traps'` prefers a problem whose named mistakes
+   * (`mistakes.ts`) include a number already on the board, so the other tanks are likelier to be
+   * the wrong answers a child really gives.
+   */
+  readonly mistakeAnswers: 'off' | 'traps';
+  /** Which mistake kinds count as traps and are listed by `mistakesFor` (DESIGN.md §9). */
+  readonly mistakeKinds: readonly MistakeKind[];
 }
+
+/** DESIGN.md §9's named mistakes for a `+`/`-` problem; see `mistakes.ts` for how each is computed. */
+export type MistakeKind =
+  | 'offByOne'
+  | 'offByTwo'
+  | 'forgottenCarry'
+  | 'operationSwap'
+  | 'digitReversal';
 
 export const defaultConfig: Config = {
   lanes: 4,
@@ -161,4 +178,10 @@ export const defaultConfig: Config = {
   tAnswerSeconds: 5,
   alertThreshold: 0.5,
   alertPoolSize: 3,
+  // 'traps' with all five kinds (specs/07-distractor-strategies.md, decided with the author): a
+  // problem-dependent mistake (forgotten carry, swapped operation) is on the board for ~77% of
+  // problems against ~10% at 'off' (300 seeds, 5 s answers); kinds are narrowed as play shows
+  // which ones she actually makes.
+  mistakeAnswers: 'traps',
+  mistakeKinds: ['offByOne', 'offByTwo', 'forgottenCarry', 'operationSwap', 'digitReversal'],
 };

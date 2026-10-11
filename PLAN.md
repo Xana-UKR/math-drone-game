@@ -1,7 +1,27 @@
 # Build Plan
 
-**Status: increment 6 complete. Next: increment 7 — distractor strategies.** *(The target player's
-first unassisted session can run any time; it is where `t_answer` gets measured.)*
+**Status: increment 7 complete. Next: increment 8 — outcome logging.** *(The target player's
+first unassisted session can run any time; it is where `t_answer` gets measured. The play session
+after 8 compares distractor levels with `?mistakes=off` / `?mistakes=traps`.)*
+
+- **7 landed (specs/07-distractor-strategies.md):** new `src/core/mistakes.ts` — `mistakesFor(problem,
+  config)` returns `Mistake[]` for five kinds (off-by-one, off-by-two, forgotten carry, operation
+  swap, digit reversal); DESIGN §9 now lists them. `Config` gains `mistakeAnswers: 'off' | 'traps'`
+  (ships `'traps'`) and `mistakeKinds` (ships all five). Under `traps`, `generateProblem` prefers a
+  candidate whose **problem-dependent** mistake (`PROBLEM_DEPENDENT_KINDS`: forgotten carry,
+  operation swap) is on another tank. Still one rng draw. **Changed at review:** the first version
+  counted every kind, and since off-by-one, off-by-two and digit reversal are the same for every
+  candidate, any of them on the board made the filter a no-op. Measured after the fix (300 seeds,
+  5 s answers): a problem-dependent trap on the board for 77% of problems (87% with 2+ other
+  tanks), against 10% at `off`; `x ± 0` problems drop from 12% to 3%. The author played it:
+  difficulty visibly rises. Dev builds take `?mistakes=off|traps`. DESIGN §9's "well-separated"
+  rule is dropped (she makes no wrong answers). **Carried to 8:** record the run's `mistakeAnswers`
+  level, and per wrong tap enough to compute its kind later with `mistakesFor`; nothing on screen
+  shows the level yet. **Carried to 7b:** `near` — entering tanks prefer a neighbour of a board
+  number, which needs numbers drawn at entry (a `GameState` change); its earlier 90% was measured
+  before the fix, so re-measure. Built when play shows she has outgrown `traps`. **Kept as is,
+  agreed at review:** the board passed to `traps` includes tanks the child can no longer save in
+  time.
 
 - **6 landed (specs/06-fairness-governor.md):** DESIGN §6's guarantee now holds in the code — a
   player answering correctly in exactly `t_answer` never loses a tank (tested over 100 seeds at
@@ -150,8 +170,9 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **5** | **Urgency targeting.** §5 tiers and weighted pick; critical threshold **derived** as `1 − (2·t_answer + flight) / traverse_time` ("must be offered now"), never a typed-in feel number | core | A test per tier; the answer never changes mid-problem |
 | **5b** | **Round duration.** End overlay shows `Time: N seconds` (game time), under "Wrong answers" — added at the author's request | vertical | The time on the end screen matches a phone stopwatch, win or lose |
 | **6** | **Fairness invariant + spawn governor.** §6 assertion in dev builds; state-dependent spawning replaces 4c's lane refill | core | Setting `t_answer` absurdly high makes the assertion fire |
-| **7** | **Distractor strategies.** Adjacent times-table fact, off-by-one/carry, operand confusion, digit reversal — named, per-tier | core | A test per strategy; age-7 tier yields well-separated distractors |
-| **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor, elapsed time | core | A run dumps records; nothing consumes them yet |
+| **7** | **Distractor strategies.** Named `+`/`−` mistakes (off-by-one, off-by-two, forgotten carry, operation swap, digit reversal); `mistakeAnswers` level `off` / `traps` — `traps` picks the target's problem so a problem-dependent mistake is on the board | core | A test per mistake; `traps` puts a trap on the board for most problems; `off` plays as before |
+| **7b** | **`near` distractor level.** Entering tanks prefer a neighbour of a board number (numbers drawn at entry — a `GameState` change). *Built when play shows she has outgrown `traps`* | core | Off-by-one/two on the board for most problems, without breaking §9's generator constraints |
+| **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor (computable from `mistakesFor`), elapsed time; per run: the `mistakeAnswers` level | core | A run dumps records; nothing consumes them yet |
 | **9** | **Simulation harness.** Headless; player modelled as `(t_answer, accuracy)`; 1000 runs per preset; report run length, win rate, breach rate, "no safe answer available" count. **Then tune.** | core | Win rates per preset; DESIGN.md §17a.1 and §17a.2 closed |
 | **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI → audio (Howler) → recall mode → profiles/stats → PWA + offline | mixed | per DESIGN.md §18 priority |
 
@@ -181,7 +202,7 @@ measured values.
 | Drones | start N, +1 per M=4 correct | §7 — **M = 4 decided 2026-10-09** |
 | Wave size N | 13 | §7 — `floor((N−1)/M)` = a 3-mistake error budget; ~65 s at a 5 s answer (4c) |
 | Problems | add/sub within 20, carrying and borrowing allowed | §2 default preset |
-| Distractors | well-separated, not near-misses | §9, for age 7 |
+| Distractors | `traps`, all five mistake kinds | §9 — **was "well-separated"; dropped in 7 with the author** (`mistakeAnswers`, `mistakeKinds`) |
 
 The critical threshold is **computed** from `t_answer` and traverse time, never typed in — §6 is
 explicit that this is the one threshold that must be derived. Encode it as a function so changing
@@ -219,10 +240,10 @@ knob, so `false` stays available as the easier preset for a younger player.
 
 **`Config` does not hold this whole table yet, deliberately.** Each increment adds the fields it
 uses, so an unused constant can never drift out of sync with the increment that defines its
-meaning. As of increment 5 it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
+meaning. As of increment 7 it holds `lanes`, `laneTraverseSeconds`, `openingStagger`,
 `waveSize`, `answerMin`, `answerMax`, `operandMin`, `operandMax`, `allowCarry`,
-`droneTraverseSeconds`, `hearts`, `resupplyEvery`, `tAnswerSeconds`, `alertThreshold` and
-`alertPoolSize`.
+`droneTraverseSeconds`, `hearts`, `resupplyEvery`, `tAnswerSeconds`, `alertThreshold`,
+`alertPoolSize`, `mistakeAnswers` and `mistakeKinds`.
 
 **`droneTraverseSeconds` is a speed, not a flight duration.** It is the time to cross the full
 board width, wall to far edge, so a near tank dies sooner than a distant one. The table's
