@@ -208,11 +208,11 @@ export const defaultConfig: Config = {
   tAnswerSeconds: 5,
   alertThreshold: 0.5,
   alertPoolSize: 3,
-  // 'traps' with all five kinds (specs/07-distractor-strategies.md, decided with the author): a
-  // problem-dependent mistake (forgotten carry, swapped operation) is on the board for ~77% of
-  // problems against ~10% at 'off' (300 seeds, 5 s answers); kinds are narrowed as play shows
-  // which ones she actually makes.
-  mistakeAnswers: 'traps',
+  // 'near' with all five kinds (decided with the author after increment 7b, when she had outgrown
+  // 'traps'): a ±1/±2 on another tank for ~67% of problems against ~41% at 'traps', keeping traps'
+  // ~77% problem-dependent mistakes (300 seeds, 5 s answers); kinds are narrowed as play shows
+  // which ones she actually makes. Players get to change the level in the settings UI (10+).
+  mistakeAnswers: 'near',
   mistakeKinds: ['offByOne', 'offByTwo', 'forgottenCarry', 'operationSwap', 'digitReversal'],
   // 4 (specs/07b-near-distractors.md, decided with the author): one board's worth of tanks at 4
   // lanes; ~67% ±1/±2 on the board at 0-20 and a wave spanning 68 numbers at 0-100.

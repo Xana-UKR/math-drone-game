@@ -17,7 +17,7 @@ where `t_answer` gets measured, so note which level a measured `t_answer` was pl
   - **Changed after review, with the author:** one cluster per wave narrowed a run's answers to
     ~14 numbers at any range. `Config.nearClusterSize` (ships 4) restores the spread: ±1/±2 on the
     board for 67% of problems at 0–20 (41% at `traps`); at 0–100 a span of 68 instead of 14. DESIGN
-    §9 has the trade-off table. `traps` stays the shipped level; dev builds take `?mistakes=near`.
+    §9 has the trade-off table. Dev builds take `?mistakes=near`. **Then made the shipped default, with the author**: `refill.test.ts` pins `traps` for 4c's queue order, and the shipped-level test asserts `near` (both approved).
   - Under `near`, `createGameState` throws on a `nearClusterSize` that is not a whole number ≥ 1.
   - **Kept as is, agreed at review:** the entry pick scores against a tank whose drone is in
     flight; a number with no neighbours can wait to the wave's end (both in `JOURNAL.md`).
@@ -209,7 +209,7 @@ How we execute `DESIGN.md`. Rules for working live in `CLAUDE.md`; reasoning liv
 | **7b** | **`near` distractor level.** The wave is drawn in clusters of close numbers, and entering tanks prefer a neighbour of a board number — no `GameState` change (specs/07b-near-distractors.md). *Built after 8, when play showed she had outgrown `traps`* | core | Off-by-one/two on the board for most problems, without breaking §9's generator constraints |
 | **8** | **Outcome logging.** Per problem: the problem, chosen answer, which distractor (computable from `mistakesFor`), elapsed time; per run: the `mistakeAnswers` level | core | A run dumps records; nothing consumes them yet |
 | **9** | **Simulation harness.** Headless; player modelled as `(t_answer, accuracy)`; 1000 runs per preset; report run length, win rate, breach rate, "no safe answer available" count. **Then tune.** | core | Win rates per preset; DESIGN.md §17a.1 and §17a.2 closed |
-| **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI → audio (Howler) → recall mode → profiles/stats → PWA + offline. **Profiles/stats also removes `GameState.wrongAnswers`** (4d), which 8's `log` duplicates: the end screen reads the wrong taps from the log, and `summary.test.ts` moves to it | mixed | per DESIGN.md §18 priority |
+| **10+** | Practice mode → real assets (§13 manifest, named SVG groups, sprite sheets, dev asset page) → presets UI (**includes the distractor level, `off` / `traps` / `near`, as a normal setting — the author wants no URL override in production**) → audio (Howler) → recall mode → profiles/stats → PWA + offline. **Profiles/stats also removes `GameState.wrongAnswers`** (4d), which 8's `log` duplicates: the end screen reads the wrong taps from the log, and `summary.test.ts` moves to it | mixed | per DESIGN.md §18 priority |
 
 **Effort:** leave at the Claude Code default (`xhigh`) throughout, except increments **6** and **9** —
 set `max` when opening those sessions. Set it at session start, never mid-session (`WORKFLOW.md`).
@@ -237,7 +237,7 @@ measured values.
 | Drones | start N, +1 per M=4 correct | §7 — **M = 4 decided 2026-10-09** |
 | Wave size N | 13 | §7 — `floor((N−1)/M)` = a 3-mistake error budget; ~65 s at a 5 s answer (4c) |
 | Problems | add/sub within 20, carrying and borrowing allowed | §2 default preset |
-| Distractors | `traps`, all five mistake kinds; `near` available, clusters of 4 | §9 — **was "well-separated"; dropped in 7 with the author** (`mistakeAnswers`, `mistakeKinds`, `nearClusterSize` from 7b) |
+| Distractors | **`near`**, all five mistake kinds, clusters of 4 — **default since 7b, decided with the author** | §9 — **was "well-separated"; dropped in 7 with the author** (`mistakeAnswers`, `mistakeKinds`, `nearClusterSize` from 7b) |
 
 The critical threshold is **computed** from `t_answer` and traverse time, never typed in — §6 is
 explicit that this is the one threshold that must be derived. Encode it as a function so changing

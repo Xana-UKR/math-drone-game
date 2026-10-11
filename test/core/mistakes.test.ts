@@ -221,8 +221,8 @@ describe('ensureProblem — passes the other tanks to the generator', () => {
 });
 
 describe('defaultConfig — the shipped level', () => {
-  it('ships traps with all five mistake kinds active, as decided for increment 7', () => {
-    expect(defaultConfig.mistakeAnswers).toBe('traps');
+  it('ships near with all five mistake kinds active, as decided after increment 7b', () => {
+    expect(defaultConfig.mistakeAnswers).toBe('near');
     expect([...defaultConfig.mistakeKinds].sort()).toEqual([...ALL_KINDS].sort());
   });
 });

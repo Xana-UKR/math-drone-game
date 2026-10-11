@@ -361,8 +361,10 @@ tank still owns its number from the moment it enters.
 | Level | What the game does |
 |---|---|
 | `off` | the problem is drawn at random from all candidates |
-| `traps` | the problem prefers one whose problem-dependent mistake is on the board — the default (a trap on the board for ~77% of problems, against ~10% at `off`) |
-| `near` | everything `traps` does, plus close numbers on the board: the wave is drawn in clusters of `nearClusterSize` (each number after a cluster's first is ±1 or ±2 from one in its cluster), and an entering tank takes the waiting number with the most ±1/±2 neighbours on the board (a ±1 counts double). A ±1 or ±2 on another tank for ~67% of problems, against ~41% at `traps` |
+| `traps` | the problem prefers one whose problem-dependent mistake is on the board (a trap on the board for ~77% of problems, against ~10% at `off`) |
+| `near` | everything `traps` does, plus close numbers on the board: the wave is drawn in clusters of `nearClusterSize` (each number after a cluster's first is ±1 or ±2 from one in its cluster), and an entering tank takes the waiting number with the most ±1/±2 neighbours on the board (a ±1 counts double). A ±1 or ±2 on another tank for ~67% of problems, against ~41% at `traps`. **The default** since 7b (decided with the author, 2026-10-11) |
+
+**The level is a player-facing setting.** In production it is changed through the settings UI, never a URL parameter; the dev-only `?mistakes=` override exists for play sessions.
 
 **`near` trades closeness for spread** (`nearClusterSize`, increment 7b). One cluster per wave puts
 a ±1/±2 on the board for ~74% of problems but squeezes a run's answers into a band of ~14 numbers

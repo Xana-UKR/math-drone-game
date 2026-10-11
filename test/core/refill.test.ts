@@ -27,6 +27,8 @@ const config: Config = {
   operandMax: 20,
   allowCarry: true,
   hearts: 3,
+  // 4c's queue order: under 'near' (increment 7b) an entering tank takes a close neighbour instead.
+  mistakeAnswers: 'traps',
 };
 
 const DT = 1 / 60;
